@@ -1,8 +1,10 @@
 /*
  * Example fingerprint enrollment program
  * Enrolls your chosen finger and saves the print to disk
+ *
  * Copyright (C) 2007 Daniel Drake <dsd@gentoo.org>
  * Copyright (C) 2019 Marco Trevisan <marco.trevisan@canonical.com>
+ * Copyright (C) 2025 Josecarlos Vidal <josecarlosvidal2@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -42,11 +44,6 @@ static void on_enroll_completed (FpDevice *dev, GAsyncResult *res, void *user_da
     if (!error) {
         enroll_data->_fingerprint._clear_storage._session.ret_value = EXIT_SUCCESS;
 
-        if (fp_device_has_feature (dev, FP_DEVICE_FEATURE_STORAGE))
-            g_debug ("El dispositivo tiene almacenamiento, guardando una muestra de referencia localmente");
-        else
-            g_debug ("El dispositivo no tiene almacenamiento, guardando la muestra solo en local");
-
         int b64 = save_data_into_member(print, &enroll_data->base64);
 
         if (b64 < 0) {
@@ -69,50 +66,12 @@ static void on_enroll_progress (FpDevice *device,
                                 gpointer  user_data,
                                 GError   *error) {
     if (error) {
-        g_warning ("Enrolamiento: La etapa %d de %d ha fallado con error: %s",
-                    completed_stages,
-                    fp_device_get_nr_enroll_stages (device),
-                    error->message);
-
+        g_warning ("Enrolamiento: La etapa %d de %d ha fallado con error: %s", completed_stages, fp_device_get_nr_enroll_stages (device), error->message);
         return;
     }
 
-    if (print && fp_print_get_image (print) &&
-        print_image_save (print, "enrolled.pgm"))
-        g_print ("Imagen escaneada escrita en 'enrolled.pgm'\n");
-
     g_print ("Enrolamiento: Etapa %d de %d pasada. Yujuu!\n", completed_stages,
             fp_device_get_nr_enroll_stages (device));
-}
-
-static gboolean should_update_fingerprint (void) {
-    int update_choice;
-    gboolean update_fingerprint = FALSE;
-
-    g_print ("¿Deseas actualizar una huella existente en lugar de reemplazarla (si ya existe)?\n"
-            "Ingresa S/s para actualizar y N/n para no hacer nada\n");
-    update_choice = getchar ();
-    if (update_choice == EOF) {
-        g_warning ("EOF han sido detectados!, Saliendo...");
-        return EXIT_FAILURE;
-    }
-
-    switch (update_choice) {
-        case 's':
-        case 'S':
-            update_fingerprint = TRUE;
-            break;
-
-        case 'n':
-        case 'N':
-            update_fingerprint = FALSE;
-            break;
-
-        default:
-            g_warning ("Elección inválida '%c', debería haber sido S/s o N/n.", update_choice);
-            return EXIT_FAILURE;
-    }
-    return update_fingerprint;
 }
 
 static void on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data) {
@@ -135,14 +94,6 @@ static void on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data)
     }
 
     g_print("Dispositivo abierto.\n");
-
-    if (fp_device_has_feature (dev, FP_DEVICE_FEATURE_UPDATE_PRINT)) {
-        g_print ("El dispositivo soporta actualizaciones de huellas.\n");
-        enroll_data->update_fingerprint = should_update_fingerprint ();
-    } else {
-        g_print ("El dispositivo no soporta actualizaciones de huellas. Muestras antiguas serán borradas.\n");
-        enroll_data->update_fingerprint = FALSE;
-    }
 
     g_print ("Es momento de enrolar tu huella.\n\n");
     g_print ("Necesitarás escanear satisfactoriamente la huella de tu dedo %s %d veces para completar el proceso.\n\n",
