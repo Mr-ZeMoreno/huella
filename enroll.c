@@ -163,7 +163,7 @@ static gboolean sigint_cb (void *user_data) {
 int main () {
     g_autoptr(FpContext) ctx = NULL;
     g_autoptr(EnrollData) enroll_data = g_new0(EnrollData, 1);
-    GPtrArray *devices;
+    GPtrArray *all_devices;
     FpDevice *device;
     FpFinger finger;
 
@@ -183,13 +183,13 @@ int main () {
 
     ctx = fp_context_new ();
 
-    devices = fp_context_get_devices (ctx);
-    if (!devices) {
+    all_devices = fp_context_get_devices (ctx);
+    if (!all_devices) {
         g_warning ("No fue posible obtener los dispositivos");
         return EXIT_FAILURE;
     }
 
-    device = discover_device (devices);
+    device = discover_device (all_devices);
     if (!device) {
         g_warning ("No se detectaron dispositivos.");
         return EXIT_FAILURE;
