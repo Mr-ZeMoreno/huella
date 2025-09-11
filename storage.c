@@ -83,10 +83,6 @@ static int save_data (GVariant* data) {
     length = g_variant_get_size (data);
     contents = (gchar *) g_variant_get_data (data);
 
-    if (!g_file_set_contents (STORAGE_FILE, contents, length, NULL)) {
-        g_warning ("Error saving storage,!");
-        return -1;
-    }
 
     g_variant_ref_sink (data);
     g_variant_unref (data);

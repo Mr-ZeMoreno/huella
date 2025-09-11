@@ -67,42 +67,42 @@ FpDevice* discover_device (GPtrArray * devices) {
 const char* finger_to_string (FpFinger finger) {
     switch (finger) {
     case FP_FINGER_LEFT_THUMB:
-        return "left thumb";
+        return "pulgar izquierdo";
 
     case FP_FINGER_LEFT_INDEX:
-        return "left index";
+        return "indice izquierdo";
 
     case FP_FINGER_LEFT_MIDDLE:
-        return "left middle";
+        return "medio izquierdo";
 
     case FP_FINGER_LEFT_RING:
-        return "left ring";
+        return "anular izquierdo";
 
     case FP_FINGER_LEFT_LITTLE:
-        return "left little";
+        return "meñique izquierdo";
 
     case FP_FINGER_RIGHT_THUMB:
-        return "right thumb";
+        return "pulgar derecho";
 
     case FP_FINGER_RIGHT_INDEX:
-        return "right index";
+        return "indice derecho";
 
     case FP_FINGER_RIGHT_MIDDLE:
-        return "right middle";
+        return "medio derecho";
 
     case FP_FINGER_RIGHT_RING:
-        return "right ring";
+        return "anular derecho";
 
     case FP_FINGER_RIGHT_LITTLE:
-        return "right little";
+        return "meñique derecho";
 
     case FP_FINGER_UNKNOWN:
     default:
-        return "unknown";
+        return "desconocido";
     }
 }
 
-FpFinger finger_chooser (void) {
+FpFinger finger_chooser () {
     int i = FP_FINGER_UNKNOWN;
 
     for (i = FP_FINGER_FIRST; i <= FP_FINGER_LAST; ++i)
