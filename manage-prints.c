@@ -26,173 +26,129 @@
 #include "utilities.h"
 
 
-static void on_print_deleted (FpDevice     *dev,
-                              GAsyncResult *res,
-                              gpointer      user_data);
+static void on_print_deleted (FpDevice     *dev, GAsyncResult *res, gpointer      user_data);
 
-static void
-delete_next_print (FpDevice *dev,
-                   ListData *list_data)
-{
-  FpPrint *print;
+static void delete_next_print (FpDevice *dev, ListData *list_data) {
+    FpPrint *print;
 
-  g_assert_nonnull (list_data->to_delete);
-  print = list_data->to_delete->data;
+    g_assert_nonnull (list_data->to_delete);
+    print = list_data->to_delete->data;
 
-  g_debug ("Deleting print %s", fp_print_get_description (print));
-  fp_device_delete_print (dev, print, NULL,
-                          (GAsyncReadyCallback) on_print_deleted, list_data);
+    g_debug ("Eliminando muestra %s", fp_print_get_description (print));
+    fp_device_delete_print (dev, print, NULL, (GAsyncReadyCallback) on_print_deleted, list_data);
 }
 
-static void
-on_print_deleted (FpDevice     *dev,
-                  GAsyncResult *res,
-                  gpointer      user_data)
-{
-  ListData *list_data = user_data;
+static void on_print_deleted (FpDevice *dev,GAsyncResult *res, gpointer user_data) {
+    ListData *list_data = user_data;
 
-  g_autoptr(GError) error = NULL;
-  g_autoptr(FpPrint) print = NULL;
-  GList *deleted_link;
+    g_autoptr(GError) error = NULL;
+    g_autoptr(FpPrint) print = NULL;
+    GList *deleted_link;
 
-  fp_device_delete_print_finish (dev, res, &error);
+    fp_device_delete_print_finish (dev, res, &error);
 
-  deleted_link = list_data->to_delete;
-  print = g_steal_pointer (&deleted_link->data);
-  list_data->to_delete = g_list_delete_link (list_data->to_delete, deleted_link);
+    deleted_link = list_data->to_delete;
+    print = g_steal_pointer (&deleted_link->data);
+    list_data->to_delete = g_list_delete_link (list_data->to_delete, deleted_link);
 
-  if (error)
-    {
-      g_warning ("Failed to remove print %s: %s",
-                 fp_print_get_description (print), error->message);
-      list_data->any_failed = TRUE;
-    }
-  else
-    {
-      g_debug ("Deleted print %s from device", fp_print_get_description (print));
+    if (error) {
+        g_warning ("Failed to remove print %s: %s", fp_print_get_description (print), error->message);
+        list_data->any_failed = TRUE;
+    } else {
+        g_debug ("Deleted print %s from device", fp_print_get_description (print));
     }
 
-  if (list_data->to_delete != NULL)
-    {
-      delete_next_print (dev, list_data);
-    }
-  else
-    {
-      if (!list_data->any_failed)
-        list_data->_fingerprint._clear_storage._session.ret_value = EXIT_SUCCESS;
-
-      fp_device_close (dev, NULL, (GAsyncReadyCallback) fingerprint_device_closed, list_data);
-    }
-}
-
-static void
-on_list_completed (FpDevice     *dev,
-                   GAsyncResult *res,
-                   gpointer      user_data)
-{
-  ListData *list_data = user_data;
-
-  g_autoptr(GPtrArray) prints = NULL;
-  g_autoptr(GError) error = NULL;
-
-  prints = fp_device_list_prints_finish (dev, res, &error);
-
-  if (!error)
-    {
-      guint i;
-      char buf[128];
-
-      g_print ("Device contains %u prints\n", prints->len);
-
-      for (i = 0; i < prints->len; ++i)
-        {
-          FpPrint * print = prints->pdata[i];
-          const GDate *date = fp_print_get_enroll_date (print);
-
-          g_print ("[%d] Print of %s finger for username %s", i + 1,
-                   finger_to_string (fp_print_get_finger (print)),
-                   fp_print_get_username (print));
-
-          if (date && g_date_valid (date))
-            {
-              g_date_strftime (buf, G_N_ELEMENTS (buf), "%Y-%m-%d\0", date);
-              g_print (", enrolled on %s", buf);
-            }
-
-          g_print (". Description: %s\n", fp_print_get_description (print));
-        }
-
-      if (prints->len)
-        {
-          gint64 idx = 0;
-
-          g_print ("Want to delete saved print? [<number>/A/n]\n> ");
-          if (fgets (buf, 3, stdin))
-            idx = g_ascii_strtoll (buf, NULL, 10);
-
-          if (idx > 0 && idx <= prints->len)
-            {
-              FpPrint *print = prints->pdata[idx - 1];
-              list_data->to_delete = g_list_prepend (list_data->to_delete,
-                                                     g_object_ref (print));
-            }
-          else if (buf[0] == 'A')
-            {
-              for (i = 0; i < prints->len; ++i)
-                {
-                  FpPrint *print = prints->pdata[i];
-                  list_data->to_delete = g_list_prepend (list_data->to_delete,
-                                                         g_object_ref (print));
-                }
-            }
-          else
-            {
-              if (buf[0] == 'n' || buf[0] == 'N')
-                list_data->_fingerprint._clear_storage._session.ret_value = EXIT_SUCCESS;
-              else
-                g_warning ("Invalid finger selected");
-            }
-        }
-
-      if (list_data->to_delete)
+    if (list_data->to_delete != NULL) {
         delete_next_print (dev, list_data);
-      else
-        fp_device_close (dev, NULL, (GAsyncReadyCallback) fingerprint_device_closed,
-                         list_data);
-    }
-  else
-    {
-      g_warning ("Getting prints failed with error %s", error->message);
-      g_main_loop_quit (list_data->_fingerprint._clear_storage._session.loop);
+    } else {
+        if (!list_data->any_failed)
+            list_data->_fingerprint._clear_storage._session.ret_value = EXIT_SUCCESS;
+
+        fp_device_close (dev, NULL, (GAsyncReadyCallback) fingerprint_device_closed, list_data);
     }
 }
 
-static void
-on_device_opened (FpDevice     *dev,
-                  GAsyncResult *res,
-                  gpointer      user_data)
-{
-  ListData *list_data = user_data;
+static void on_list_completed (FpDevice *dev, GAsyncResult *res, gpointer user_data) {
+    ListData *list_data = user_data;
 
-  g_autoptr(GError) error = NULL;
+    g_autoptr(GPtrArray) prints = NULL;
+    g_autoptr(GError) error = NULL;
 
-  if (!fp_device_open_finish (dev, res, &error))
-    {
-      g_warning ("Failed to open device: %s", error->message);
-      g_main_loop_quit (list_data->_fingerprint._clear_storage._session.loop);
-      return;
+    prints = fp_device_list_prints_finish (dev, res, &error);
+
+    if (!error) {
+        guint i;
+        char buf[128];
+
+        g_print ("Device contains %u prints\n", prints->len);
+
+        for (i = 0; i < prints->len; ++i) {
+            FpPrint * print = prints->pdata[i];
+            const GDate *date = fp_print_get_enroll_date (print);
+
+            g_print ("[%d] Print of %s finger for username %s", i + 1,
+                    finger_to_string (fp_print_get_finger (print)),
+                    fp_print_get_username (print));
+
+            if (date && g_date_valid (date)) {
+                g_date_strftime (buf, G_N_ELEMENTS (buf), "%Y-%m-%d\0", date);
+                g_print (", enrolled on %s", buf);
+            }
+
+            g_print (". Description: %s\n", fp_print_get_description (print));
+        }
+
+        if (prints->len) {
+            gint64 idx = 0;
+
+            g_print ("Want to delete saved print? [<number>/A/n]\n> ");
+            if (fgets (buf, 3, stdin))
+                idx = g_ascii_strtoll (buf, NULL, 10);
+
+            if (idx > 0 && idx <= prints->len) {
+                FpPrint *print = prints->pdata[idx - 1];
+                list_data->to_delete = g_list_prepend (list_data->to_delete, g_object_ref (print));
+            } else if (buf[0] == 'A') {
+                for (i = 0; i < prints->len; ++i) {
+                    FpPrint *print = prints->pdata[i];
+                    list_data->to_delete = g_list_prepend (list_data->to_delete, g_object_ref (print));
+                }
+            } else {
+                if (buf[0] == 'n' || buf[0] == 'N')
+                    list_data->_fingerprint._clear_storage._session.ret_value = EXIT_SUCCESS;
+                else
+                    g_warning ("Invalid finger selected");
+            }
+        }
+
+        if (list_data->to_delete)
+            delete_next_print (dev, list_data);
+        else
+            fp_device_close (dev, NULL, (GAsyncReadyCallback) fingerprint_device_closed, list_data);
+    } else {
+        g_warning ("Getting prints failed with error %s", error->message);
+        g_main_loop_quit (list_data->_fingerprint._clear_storage._session.loop);
+    }
+}
+
+static void on_device_opened (FpDevice *dev, GAsyncResult *res, gpointer user_data) {
+    ListData *list_data = user_data;
+
+    g_autoptr(GError) error = NULL;
+
+    if (!fp_device_open_finish (dev, res, &error)) {
+        g_warning ("Failed to open device: %s", error->message);
+        g_main_loop_quit (list_data->_fingerprint._clear_storage._session.loop);
+        return;
     }
 
-  if (!fp_device_has_feature (dev, FP_DEVICE_FEATURE_STORAGE))
-    {
-      g_warning ("Device %s doesn't support storage", fp_device_get_name (dev));
-      g_main_loop_quit (list_data->_fingerprint._clear_storage._session.loop);
-      return;
+    if (!fp_device_has_feature (dev, FP_DEVICE_FEATURE_STORAGE)) {
+        g_warning ("Device %s doesn't support storage", fp_device_get_name (dev));
+        g_main_loop_quit (list_data->_fingerprint._clear_storage._session.loop);
+        return;
     }
 
-  fp_device_list_prints (dev, NULL,
-                         (GAsyncReadyCallback) on_list_completed, list_data);
-
+    fp_device_list_prints (dev, NULL, (GAsyncReadyCallback) on_list_completed, list_data);
 }
 
 int

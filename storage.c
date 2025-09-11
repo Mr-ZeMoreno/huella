@@ -29,14 +29,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <json-glib/json-glib.h>
 
 #define STORAGE_FILE "test-storage.variant"
 
-static char *
-get_print_data_descriptor (FpPrint *print, FpDevice *dev, FpFinger finger)
-{
-    const char *driver;
-    const char *dev_id;
+static char* get_print_data_descriptor (FpPrint *print, FpDevice *dev, FpFinger finger) {
+    const char* driver;
+    const char* dev_id;
 
     if (print) {
         driver = fp_print_get_driver (print);
@@ -49,11 +48,9 @@ get_print_data_descriptor (FpPrint *print, FpDevice *dev, FpFinger finger)
     return g_strdup_printf ("%s/%s/%x", driver, dev_id, finger);
 }
 
-static char *
-get_print_prefix_for_device (FpDevice *dev)
-{
-    const char *driver;
-    const char *dev_id;
+static char* get_print_prefix_for_device (FpDevice *dev) {
+    const char* driver;
+    const char* dev_id;
 
     driver = fp_device_get_driver (dev);
     dev_id = fp_device_get_device_id (dev);
@@ -61,12 +58,10 @@ get_print_prefix_for_device (FpDevice *dev)
     return g_strdup_printf ("%s/%s/", driver, dev_id);
 }
 
-static GVariantDict *
-load_data (void)
-{
-    GVariantDict *res;
-    GVariant *var;
-    gchar *contents = NULL;
+static GVariantDict* load_data (void) {
+    GVariantDict* res;
+    GVariant* var;
+    gchar* contents = NULL;
     gsize length = 0;
 
     if (!g_file_get_contents (STORAGE_FILE, &contents, &length, NULL)) {
@@ -81,9 +76,7 @@ load_data (void)
     return res;
 }
 
-static int
-save_data (GVariant *data)
-{
+static int save_data (GVariant* data) {
     const gchar *contents = NULL;
     gsize length;
 
@@ -101,15 +94,13 @@ save_data (GVariant *data)
     return 0;
 }
 
-static FpPrint *
-load_print_from_data (GVariant *data)
-{
-    const guchar *stored_data = NULL;
+static FpPrint* load_print_from_data (GVariant* data) {
+    const guchar* stored_data = NULL;
     gsize stored_len;
-    FpPrint *print;
+    FpPrint* print;
 
     g_autoptr(GError) error = NULL;
-    stored_data = (const guchar *) g_variant_get_fixed_array (data, &stored_len, 1);
+    stored_data = (const guchar*) g_variant_get_fixed_array (data, &stored_len, 1);
     print = fp_print_deserialize (stored_data, stored_len, &error);
 
     if (error)
@@ -317,4 +308,47 @@ gboolean print_image_save (FpPrint *print, const char *path) {
         return save_image_to_pgm (img, path);
 
     return FALSE;
+}
+
+int save_into_json_file(gchar* user_id, char* base64, const char* path) {
+    g_return_val_if_fail(user_id != NULL, -1);
+    g_return_val_if_fail(base64 != NULL, -1);
+    g_return_val_if_fail(path != NULL, -1);
+
+    JsonBuilder *builder = json_builder_new();
+
+    json_builder_begin_object(builder);
+
+    // Agrega el ID de usuario
+    json_builder_set_member_name(builder, "user_id");
+    json_builder_add_string_value(builder, user_id);
+
+    // Agrega la cadena base64
+    json_builder_set_member_name(builder, "fingerprint_template");
+    json_builder_add_string_value(builder, base64);
+
+    json_builder_end_object(builder);
+
+    // Crear el nodo raíz del JSON
+    JsonGenerator *generator = json_generator_new();
+    JsonNode *root = json_builder_get_root(builder);
+    json_generator_set_root(generator, root);
+
+    // Escribir al archivo
+    GError *error = NULL;
+    if (!json_generator_to_file(generator, path, &error)) {
+        g_warning("Error al guardar JSON en %s: %s", path, error->message);
+        g_error_free(error);
+        g_object_unref(generator);
+        json_node_free(root);
+        g_object_unref(builder);
+        return -1;
+    }
+
+    // Limpieza
+    g_object_unref(generator);
+    json_node_free(root);
+    g_object_unref(builder);
+
+    return 0;
 }

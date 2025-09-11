@@ -2,6 +2,7 @@
  * Utilities for example programs
  *
  * Copyright (C) 2019 Marco Trevisan <marco.trevisan@canonical.com>
+ * Copyright (C) 2025 Josecarlos Vidal <josecarlosvidal2@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -44,9 +45,7 @@ FpDevice* discover_device (GPtrArray * devices) {
 
         for (i = 0; i < devices->len; ++i) {
             dev = g_ptr_array_index (devices, i);
-            g_print ("[%d] %s (%s) - driver %s\n", i,
-                    fp_device_get_device_id (dev), fp_device_get_name (dev),
-                    fp_device_get_driver (dev));
+            g_print ("[%d] %s (%s) - driver %s\n", i, fp_device_get_device_id (dev), fp_device_get_name (dev), fp_device_get_driver (dev));
         }
 
         g_print ("> ");
@@ -121,6 +120,41 @@ FpFinger finger_chooser (void) {
     return i;
 }
 
+int input_user_email(char **user_email) {
+    char buffer[256];  // buffer temporal en la pila
+
+    g_print("Por favor ingrese su correo: ");
+    if (!fgets(buffer, sizeof(buffer), stdin)) {
+        g_warning("Error leyendo el correo.");
+        return -1;
+    }
+
+    // Eliminar salto de línea si existe
+    buffer[strcspn(buffer, "\n")] = '\0';
+
+    // Asignar memoria y copiar el contenido del buffer
+    *user_email = g_strdup(buffer);
+
+    return 0;
+}
+
+int save_data_into_member (FpPrint* print, char** base64) {
+    g_autoptr(GError) error = NULL;
+    g_autofree guchar *data = NULL;
+    gsize size;
+
+    guint8 serialized = fp_print_serialize (print, &data, &size, &error);
+
+    if (!serialized) {
+        g_warning("No se pudo serializar la plantilla");
+        return -1;
+    }
+
+    *base64 = g_base64_encode(data, size);
+
+    return 0;
+}
+
 static void _device_closed_common(FpDevice *dev, GAsyncResult *res, GMainLoop *loop) {
     g_autoptr(GError) error = NULL;
 
@@ -171,7 +205,18 @@ void clear_storage_data_free(ClearStorageData *session) {
     fingerprint_session_data_free((FingerprintSession*) session);
 }
 
+void identify_data_free (IdentifyData *session) {
+    fingerprint_session_data_free((FingerprintSession*) session);
+}
+
 void delete_data_free(DeleteData* session){
     g_object_unref(session->print);
     g_free(session);
+}
+
+gboolean sigint_cb (void* session) {
+    FingerprintSession* s = session;
+    g_cancellable_cancel (s->_clear_storage.cancellable);
+
+    return G_SOURCE_CONTINUE;
 }

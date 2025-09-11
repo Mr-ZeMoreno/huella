@@ -19,7 +19,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#define FP_COMPONENT "example-enroll"
+#include "glib.h"
+#include <stdlib.h>
+#include <unistd.h>
 
 #include <stdio.h>
 #include <libfprint-2/fprint.h>
@@ -37,8 +39,7 @@ static void on_enroll_completed (FpDevice *dev, GAsyncResult *res, void *user_da
 
     print = fp_device_enroll_finish (dev, res, &error);
 
-    if (!error)
-    {
+    if (!error) {
         enroll_data->_fingerprint._clear_storage._session.ret_value = EXIT_SUCCESS;
 
         if (fp_device_has_feature (dev, FP_DEVICE_FEATURE_STORAGE))
@@ -46,15 +47,14 @@ static void on_enroll_completed (FpDevice *dev, GAsyncResult *res, void *user_da
         else
             g_debug ("El dispositivo no tiene almacenamiento, guardando la muestra solo en local");
 
-        /* Even if the device has storage, it may not be able to save all the
-        * metadata that the print contains, so we can always save a local copy
-        * containing the handle to the device print */
-        int r = print_data_save (print, enroll_data->_fingerprint.finger,
-                                enroll_data->update_fingerprint);
-        if (r < 0) {
-            g_warning ("El guardado de datos ha fallado, código %d", r);
+        int b64 = save_data_into_member(print, &enroll_data->base64);
+
+        if (b64 < 0) {
+            g_warning("La conversión a base64 ha fallado, código %d", b64);
             enroll_data->_fingerprint._clear_storage._session.ret_value = EXIT_FAILURE;
         }
+
+       save_into_json_file(enroll_data->user_email, enroll_data->base64, "enrolled.json");
     }
     else {
         g_warning ("Enrolamiento fallido, código %s", error->message);
@@ -79,9 +79,9 @@ static void on_enroll_progress (FpDevice *device,
 
     if (print && fp_print_get_image (print) &&
         print_image_save (print, "enrolled.pgm"))
-        printf ("Imagen escaneada escrita en 'enrolled.pgm'\n");
+        g_print ("Imagen escaneada escrita en 'enrolled.pgm'\n");
 
-    printf ("Enrolamiento: Etapa %d de %d pasada. Yujuu!\n", completed_stages,
+    g_print ("Enrolamiento: Etapa %d de %d pasada. Yujuu!\n", completed_stages,
             fp_device_get_nr_enroll_stages (device));
 }
 
@@ -89,7 +89,7 @@ static gboolean should_update_fingerprint (void) {
     int update_choice;
     gboolean update_fingerprint = FALSE;
 
-    printf ("¿Deseas actualizar una huella existente en lugar de reemplazarla (si ya existe)?\n"
+    g_print ("¿Deseas actualizar una huella existente en lugar de reemplazarla (si ya existe)?\n"
             "Ingresa S/s para actualizar y N/n para no hacer nada\n");
     update_choice = getchar ();
     if (update_choice == EOF) {
@@ -121,43 +121,41 @@ static void on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data)
 
     g_autoptr(GError) error = NULL;
 
+    if (!(input_user_email(&enroll_data->user_email) == 0)) {
+        g_warning("No se pudo obtener el correo.");
+        return;
+    }
+
+    g_print("Correo obtenido como %s \n", enroll_data->user_email);
+
     if (!fp_device_open_finish (dev, res, &error)) {
         g_warning ("Fallo al abrir dispositivo: %s", error->message);
         g_main_loop_quit (enroll_data->_fingerprint._clear_storage._session.loop);
         return;
     }
 
-    printf ("Dispositivo abierto.\n");
+    g_print("Dispositivo abierto.\n");
 
     if (fp_device_has_feature (dev, FP_DEVICE_FEATURE_UPDATE_PRINT)) {
-        printf ("El dispositivo soporta actualizaciones de huellas.\n");
+        g_print ("El dispositivo soporta actualizaciones de huellas.\n");
         enroll_data->update_fingerprint = should_update_fingerprint ();
-    }
-    else {
-        printf ("El dispositivo no soporta actualizaciones de huellas. Muestras antiguas serán borradas.\n");
+    } else {
+        g_print ("El dispositivo no soporta actualizaciones de huellas. Muestras antiguas serán borradas.\n");
         enroll_data->update_fingerprint = FALSE;
     }
 
-    printf ("Es momento de enrolar tu huella.\n\n");
-    printf ("Necesitarás escanear satisfactoriamente la huella de tu dedo %s "
-            "%d veces para "
-            "completar el proceso.\n\n", finger_to_string (enroll_data->_fingerprint.finger),
+    g_print ("Es momento de enrolar tu huella.\n\n");
+    g_print ("Necesitarás escanear satisfactoriamente la huella de tu dedo %s %d veces para completar el proceso.\n\n",
+            finger_to_string (enroll_data->_fingerprint.finger),
             fp_device_get_nr_enroll_stages (dev));
-    printf ("Escanea tu huella ahora.\n");
+
+    g_print ("Escanea tu huella ahora.\n");
 
     print_template = print_create_template (dev, enroll_data->_fingerprint.finger, enroll_data->update_fingerprint);
     fp_device_enroll (dev, print_template, enroll_data->_fingerprint._clear_storage.cancellable,
                     on_enroll_progress, NULL, NULL,
                     (GAsyncReadyCallback) on_enroll_completed,
                     enroll_data);
-}
-
-static gboolean sigint_cb (void *user_data) {
-    EnrollData *enroll_data = user_data;
-
-    g_cancellable_cancel (enroll_data->_fingerprint._clear_storage.cancellable);
-
-    return G_SOURCE_CONTINUE;
 }
 
 int main () {
@@ -196,19 +194,14 @@ int main () {
     }
 
     enroll_data = g_new0 (EnrollData, 1);
+
     enroll_data->_fingerprint.finger = finger;
     enroll_data->_fingerprint._clear_storage._session.ret_value = EXIT_FAILURE;
     enroll_data->_fingerprint._clear_storage._session.loop = g_main_loop_new (NULL, FALSE);
     enroll_data->_fingerprint._clear_storage.cancellable = g_cancellable_new ();
-    enroll_data->_fingerprint._clear_storage.sigint_handler = g_unix_signal_add_full (G_PRIORITY_HIGH,
-                                                        SIGINT,
-                                                        sigint_cb,
-                                                        enroll_data,
-                                                        NULL);
+    enroll_data->_fingerprint._clear_storage.sigint_handler = g_unix_signal_add_full (G_PRIORITY_HIGH, SIGINT, sigint_cb, enroll_data, NULL);
 
-    fp_device_open (device, enroll_data->_fingerprint._clear_storage.cancellable,
-                    (GAsyncReadyCallback) on_device_opened,
-                    enroll_data);
+    fp_device_open (device, enroll_data->_fingerprint._clear_storage.cancellable, (GAsyncReadyCallback) on_device_opened, enroll_data);
 
     g_main_loop_run (enroll_data->_fingerprint._clear_storage._session.loop);
 

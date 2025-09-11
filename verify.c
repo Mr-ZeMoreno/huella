@@ -231,14 +231,6 @@ static void on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data)
     start_verification (dev, verify_data);
 }
 
-static gboolean sigint_cb (void *user_data) {
-    VerifyData *verify_data = user_data;
-
-    g_cancellable_cancel (verify_data->_fingerprint._clear_storage.cancellable);
-
-    return G_SOURCE_CONTINUE;
-}
-
 int main() {
     g_autoptr(FpContext) ctx = NULL;
     g_autoptr(VerifyData) verify_data = NULL;
@@ -266,7 +258,7 @@ int main() {
     verify_data->_fingerprint._clear_storage._session.ret_value = EXIT_FAILURE;
     verify_data->_fingerprint._clear_storage._session.loop = g_main_loop_new (NULL, FALSE);
     verify_data->_fingerprint._clear_storage.cancellable = g_cancellable_new ();
-    verify_data->_fingerprint._clear_storage.sigint_handler = g_unix_signal_add_full (G_PRIORITY_HIGH, SIGINT, sigint_cb, verify_data, NULL);
+    verify_data->_fingerprint._clear_storage.sigint_handler = g_unix_signal_add_full (G_PRIORITY_HIGH, SIGINT, sigint_cb,verify_data, NULL);
     fp_device_open (dev, verify_data->_fingerprint._clear_storage.cancellable, (GAsyncReadyCallback) on_device_opened, verify_data);
 
     g_main_loop_run (verify_data->_fingerprint._clear_storage._session.loop);

@@ -124,16 +124,6 @@ on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data)
   start_capture (dev, capture_data);
 }
 
-static gboolean
-sigint_cb (void *user_data)
-{
-  CaptureData *capture_data = user_data;
-
-  g_cancellable_cancel (capture_data->cancellable);
-
-  return G_SOURCE_CONTINUE;
-}
-
 int
 main (int argc, const char *argv[])
 {

@@ -2,6 +2,7 @@
  * Trivial storage driver for example programs
  *
  * Copyright (C) 2019 Marco Trevisan <marco.trevisan@canonical.com>
+ * Copyright (C) 2025 Josecarlos Vidal <josecarlosvidal2@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -49,7 +50,13 @@
  typedef struct {
      FingerprintSession _fingerprint;
      gboolean update_fingerprint;
+     char* base64;
+     char* user_email;
  } EnrollData;
+
+ typedef struct {
+     FingerprintSession _fingerprint;
+ } IdentifyData;
 
  typedef struct {
      FingerprintSession _fingerprint;
@@ -85,3 +92,12 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(ClearStorageData, clear_storage_data_free)
 
 void delete_data_free(DeleteData* session);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(DeleteData, delete_data_free)
+
+
+void identify_data_free (IdentifyData *session);
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (IdentifyData, identify_data_free)
+
+gboolean sigint_cb(void* session);
+
+int save_data_into_member(FpPrint* print, char** base64);
+int input_user_email(char **user_email);

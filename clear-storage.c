@@ -121,16 +121,6 @@ on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data)
   start_clear_storage (dev, clear_storage_data);
 }
 
-static gboolean
-sigint_cb (void *user_data)
-{
-  ClearStorageData *clear_storage_data = user_data;
-
-  g_cancellable_cancel (clear_storage_data->cancellable);
-
-  return G_SOURCE_CONTINUE;
-}
-
 int
 main (void)
 {

@@ -8,6 +8,7 @@ glib_dep = dependency('glib-2.0')
 gio_dep = dependency('gio-2.0')
 gobject_dep = dependency('gobject-2.0')
 libfprint_dep = dependency('libfprint-2')
+json_glib_dep = dependency('json-glib-1.0')
 
 # Lista de ejemplos en C
 examples = [
@@ -24,7 +25,7 @@ foreach example : examples
   executable(
     example,
     [ example + '.c', 'storage.c', 'utilities.c' ],
-    dependencies: [libfprint_dep, glib_dep],
+    dependencies: [libfprint_dep, glib_dep, json_glib_dep],
   )
 endforeach
 
@@ -34,4 +35,3 @@ executable(
   'cpp-test.cpp',
   dependencies: [libfprint_dep, glib_dep, gio_dep, gobject_dep],
 )
-
