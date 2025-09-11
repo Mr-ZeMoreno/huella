@@ -21,28 +21,12 @@
  */
 
 #include "glib.h"
-#define FP_COMPONENT "example-identify"
 
-#include <stdio.h>
 #include <libfprint-2/fprint.h>
 #include <glib-unix.h>
 
 #include "storage.h"
 #include "utilities.h"
-
-
-static void on_device_closed (FpDevice *dev, GAsyncResult *res, void *user_data) {
-    IdentifyData *identify_data = user_data;
-
-    g_autoptr(GError) error = NULL;
-
-    fp_device_close_finish (dev, res, &error);
-
-    if (error)
-        g_warning ("Fallo cerrando el dispositivo %s", error->message);
-
-    g_main_loop_quit (identify_data->_fingerprint._clear_storage._session.loop);
-}
 
 static void identify_quit (FpDevice* dev, IdentifyData* identify_data) {
     if (!fp_device_is_open (dev)) {
@@ -50,7 +34,7 @@ static void identify_quit (FpDevice* dev, IdentifyData* identify_data) {
         return;
     }
 
-    fp_device_close (dev, NULL, (GAsyncReadyCallback) on_device_closed, identify_data);
+    fp_device_close (dev, NULL, (GAsyncReadyCallback) fingerprint_device_closed, identify_data);
 }
 
 static void start_identification (FpDevice* dev, IdentifyData* identify_data);
@@ -61,7 +45,6 @@ static void on_identify_completed (FpDevice *dev, GAsyncResult *res, void *user_
     g_autoptr(FpPrint) print = NULL;
     g_autoptr(FpPrint) match = NULL;
     g_autoptr(GError) error = NULL;
-    char buffer[20];
 
     if (!fp_device_identify_finish (dev, res, &match, &print, &error)) {
         g_warning ("Fallo al identificar huella: %s", error->message);
@@ -73,37 +56,14 @@ static void on_identify_completed (FpDevice *dev, GAsyncResult *res, void *user_
         }
     }
 
-    g_print ("¿Identificar otra vez? [Y/n]? ");
-
-    char* user_response =  fgets(buffer, sizeof (buffer), stdin);
-    gboolean valid_response = (buffer[0] == 'Y' || buffer[0] == 'y' || buffer[0] == '\n');
-    if (user_response && valid_response) {
-        start_identification (dev, identify_data);
-        return;
-    }
-
     identify_quit (dev, identify_data);
 }
-
-// static FpPrint * get_stored_print (FpDevice *dev, FpPrint *print) {
-//     g_autoptr(GPtrArray) gallery = gallery_data_load (dev);
-//     guint index;
-
-//     if (g_ptr_array_find_with_equal_func (gallery, print, (GEqualFunc) fp_print_equal, &index))
-//         return g_object_ref (g_ptr_array_index (gallery, index));
-
-//     return NULL;
-// }
 
 static void on_identify_cb (FpDevice *dev, FpPrint *match, FpPrint *print, gpointer user_data, GError *error) {
     if (error) {
         g_warning ("Reporte de indentificador: Ninguna huella coincidió: %s",  error->message);
         return;
     }
-
-    // if (print && fp_print_get_image (print) &&
-    //     print_image_save (print, "identify.pgm"))
-    //     g_print ("Muestra guardada como identify.pgm\n");
 
     if (match) {
         const gchar *user_id = fp_print_get_username(match);
