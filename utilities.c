@@ -30,110 +30,98 @@
 #include "utilities.h"
 
 
-FpDevice *
-discover_device (GPtrArray * devices)
-{
-  FpDevice *dev;
-  int i;
+FpDevice* discover_device (GPtrArray * devices) {
+    FpDevice *dev;
+    int i;
 
-  if (!devices->len)
-    return NULL;
+    if (!devices->len)
+        return NULL;
 
-  if (devices->len == 1)
-    {
-      i = 0;
-    }
-  else
-    {
-      g_print ("Multiple devices found, choose one\n");
+    if (devices->len == 1) {
+        i = 0;
+    } else {
+        g_print ("Multiple dispositivos encontrados, escoja uno.\n");
 
-      for (i = 0; i < devices->len; ++i)
-        {
-          dev = g_ptr_array_index (devices, i);
-          g_print ("[%d] %s (%s) - driver %s\n", i,
-                   fp_device_get_device_id (dev), fp_device_get_name (dev),
-                   fp_device_get_driver (dev));
+        for (i = 0; i < devices->len; ++i) {
+            dev = g_ptr_array_index (devices, i);
+            g_print ("[%d] %s (%s) - driver %s\n", i,
+                    fp_device_get_device_id (dev), fp_device_get_name (dev),
+                    fp_device_get_driver (dev));
         }
 
-      g_print ("> ");
-      if (!scanf ("%d%*c", &i))
-        return NULL;
+        g_print ("> ");
+        if (!scanf ("%d%*c", &i))
+            return NULL;
 
-      if (i < 0 || i >= devices->len)
-        return NULL;
+        if (i < 0 || i >= devices->len)
+            return NULL;
     }
 
-  dev = g_ptr_array_index (devices, i);
-  g_print ("Selected device %s (%s) claimed by %s driver\n",
-           fp_device_get_device_id (dev), fp_device_get_name (dev),
-           fp_device_get_driver (dev));
+    dev = g_ptr_array_index (devices, i);
+    g_print ("Ha seleccionado el dispositivo %s (%s) tomado por el driver %s\n",
+            fp_device_get_device_id (dev), fp_device_get_name (dev),
+            fp_device_get_driver (dev));
 
-  return dev;
+    return dev;
 }
 
-const char *
-finger_to_string (FpFinger finger)
-{
-  switch (finger)
-    {
+const char* finger_to_string (FpFinger finger) {
+    switch (finger) {
     case FP_FINGER_LEFT_THUMB:
-      return "left thumb";
+        return "left thumb";
 
     case FP_FINGER_LEFT_INDEX:
-      return "left index";
+        return "left index";
 
     case FP_FINGER_LEFT_MIDDLE:
-      return "left middle";
+        return "left middle";
 
     case FP_FINGER_LEFT_RING:
-      return "left ring";
+        return "left ring";
 
     case FP_FINGER_LEFT_LITTLE:
-      return "left little";
+        return "left little";
 
     case FP_FINGER_RIGHT_THUMB:
-      return "right thumb";
+        return "right thumb";
 
     case FP_FINGER_RIGHT_INDEX:
-      return "right index";
+        return "right index";
 
     case FP_FINGER_RIGHT_MIDDLE:
-      return "right middle";
+        return "right middle";
 
     case FP_FINGER_RIGHT_RING:
-      return "right ring";
+        return "right ring";
 
     case FP_FINGER_RIGHT_LITTLE:
-      return "right little";
+        return "right little";
 
     case FP_FINGER_UNKNOWN:
     default:
-      return "unknown";
+        return "unknown";
     }
 }
 
-FpFinger
-finger_chooser (void)
-{
-  int i = FP_FINGER_UNKNOWN;
+FpFinger finger_chooser (void) {
+    int i = FP_FINGER_UNKNOWN;
 
-  for (i = FP_FINGER_FIRST; i <= FP_FINGER_LAST; ++i)
-    g_print ("  [%d] %s\n", (i - FP_FINGER_FIRST), finger_to_string (i));
+    for (i = FP_FINGER_FIRST; i <= FP_FINGER_LAST; ++i)
+        g_print ("  [%d] %s\n", (i - FP_FINGER_FIRST), finger_to_string (i));
 
-  g_print ("> ");
-  if (!scanf ("%d%*c", &i))
-    return FP_FINGER_UNKNOWN;
+    g_print ("> ");
+    if (!scanf ("%d%*c", &i))
+        return FP_FINGER_UNKNOWN;
 
-  i += FP_FINGER_FIRST;
+    i += FP_FINGER_FIRST;
 
-  if (i < FP_FINGER_FIRST || i > FP_FINGER_LAST)
-    return FP_FINGER_UNKNOWN;
+    if (i < FP_FINGER_FIRST || i > FP_FINGER_LAST)
+        return FP_FINGER_UNKNOWN;
 
-  return i;
+    return i;
 }
 
-static void
-_device_closed_common(FpDevice *dev, GAsyncResult *res, GMainLoop *loop) {
+static void _device_closed_common(FpDevice *dev, GAsyncResult *res, GMainLoop *loop) {
     g_autoptr(GError) error = NULL;
 
     fp_device_close_finish(dev, res, &error);
