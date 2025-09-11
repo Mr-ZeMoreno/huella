@@ -164,7 +164,7 @@ int main () {
     g_autoptr(FpContext) ctx = NULL;
     g_autoptr(EnrollData) enroll_data = g_new0(EnrollData, 1);
     GPtrArray *devices;
-    FpDevice *dev;
+    FpDevice *device;
     FpFinger finger;
 
     g_print ("Este programa registrará el dedo seleccionado sobrescribiendo cualquier huella"
@@ -189,8 +189,8 @@ int main () {
         return EXIT_FAILURE;
     }
 
-    dev = discover_device (devices);
-    if (!dev) {
+    device = discover_device (devices);
+    if (!device) {
         g_warning ("No se detectaron dispositivos.");
         return EXIT_FAILURE;
     }
@@ -206,7 +206,7 @@ int main () {
                                                         enroll_data,
                                                         NULL);
 
-    fp_device_open (dev, enroll_data->_fingerprint._clear_storage.cancellable,
+    fp_device_open (device, enroll_data->_fingerprint._clear_storage.cancellable,
                     (GAsyncReadyCallback) on_device_opened,
                     enroll_data);
 
