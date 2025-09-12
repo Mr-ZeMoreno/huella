@@ -1,39 +1,28 @@
-# Utiliza la imagen base ARMv7 si la Raspberry Pi tiene un procesador ARMv7
-FROM dockcross/linux-armv7:latest
 
-# Establecer el directorio de trabajo
+FROM archlinux:latest
+
+# Configura el directorio de trabajo
 WORKDIR /app
 
-# Copiar el script requirements.sh
-# COPY requirements.sh .
+# Copia los archivos del proyecto al contenedor
+COPY *.c *.h *.build ./
+COPY py_package/so ./py_package/so
 
-# Actualizar los repositorios y la lista de paquetes
-RUN apt-get update && apt-get upgrade -y
-
-# Instalar las dependencias necesarias (actualizar Python y las bibliotecas)
-RUN apt-get install -y \
-    libglib2.0-dev \
-    libgio-2.0-dev \
-    libfprint-2-dev \
-    libjson-glib-dev \
+# Instalar dependencias necesarias
+RUN pacman -Syu --noconfirm && \
+    pacman -S --noconfirm \
+    base-devel \
+    git \
     meson \
-    ninja-build \
-    build-essential \
+    ninja \
     pkg-config \
     python3 \
-    python3-pip \
-    python3-setuptools
+    python-pip \
+    libfprint \
+    glib2 \
+    json-glib && \
+    pacman -Scc --noconfirm  # Limpieza de caché
 
-# Copiar los archivos de código fuente y el archivo meson.build
-COPY *.c *.h meson.build ./
+COPY entrypoint.sh .
 
-# Ejecutar meson para configurar la construcción en el directorio 'build'
-RUN meson setup build
-
-RUN mkdir so
-
-# Copiar el script compile.sh
-COPY compile.sh .
-
-# Ejecutar meson y ninja para compilar el proyecto
-CMD ["./compile.sh"]
+ENTRYPOINT [ "./entrypoint.sh" ]
