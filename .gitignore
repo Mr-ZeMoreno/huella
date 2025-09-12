@@ -1,8 +1,12 @@
-.cache/**/*
+.cache/
 
 build/**/*
 
-*.json
-*.pgm
+**/*.json
+**/*.pgm
 
 prints/**/*
+
+.ropeproject/**/*
+
+**/venv/

@@ -1,4 +1,5 @@
 
 #pragma once
 
-int indentify();
+
+char* indentify();

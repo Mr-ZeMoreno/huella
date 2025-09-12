@@ -23,7 +23,7 @@
 
 #include "gio/gio.h"
 #include "glibconfig.h"
-#include <libfprint-2/fprint.h>
+#include <fprint.h>
 #include <glib.h>
 #include <glib-unix.h>
 
@@ -58,6 +58,7 @@
 
  typedef struct {
      FingerprintSession _fingerprint;
+     char* user_email;
  } IdentifyData;
 
  typedef struct {

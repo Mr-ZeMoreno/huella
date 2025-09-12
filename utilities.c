@@ -25,7 +25,7 @@
 #include "glib.h"
 #include "glibconfig.h"
 
-#include <libfprint-2/fprint.h>
+#include <fprint.h>
 #include <stdio.h>
 
 #include "utilities.h"

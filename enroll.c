@@ -26,7 +26,7 @@
 #include <unistd.h>
 
 #include <stdio.h>
-#include <libfprint-2/fprint.h>
+#include <fprint.h>
 #include <glib-unix.h>
 
 #include "storage.h"

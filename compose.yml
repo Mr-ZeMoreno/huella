@@ -1,0 +1,6 @@
+services:
+  app:
+    build:
+      context: .
+    volumes:
+      - ./py_package/so:/app/so

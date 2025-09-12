@@ -18,34 +18,30 @@ class FpFinger(IntEnum):
 # Carga la librería (ruta relativa o absoluta)
 fp = ctypes.CDLL('../build/libfp_reader.so')
 
+# Enroll
+fp.enroll.restype = ctypes.c_int
+fp.enroll.argtypes = [ctypes.c_char_p, ctypes.c_int]
+
 def enroll(email: str, finger_number: FpFinger) -> int:
-    # Define el tipo de retorno (int)
-    fp.enroll.restype = ctypes.c_int
-
-    # Define los argumentos: const char* y int
-    fp.enroll.argtypes = [ctypes.c_char_p, ctypes.c_int]
-
-    # Llamamos nuestra función
     return fp.enroll(email.encode('utf-8'), finger_number)
 
+# Verify
+fp.verify.restype = ctypes.c_int
+fp.verify.argtypes = [ctypes.c_char_p, ctypes.c_int]
+
 def verify(email:str, retries:int=3) -> int:
-    fp.verify.restype = ctypes.c_int
-
-    fp.verify.argtypes = [ctypes.c_char_p, ctypes.c_int]
-
     return fp.verify(email.encode('utf-8'), retries)
 
-def identify()->int:
-    fp.identify.restype = ctypes.c_int
+# Identify
+fp.identify.restype = ctypes.c_char_p
+fp.identify.argtypes = []
 
-    fp.identify.argtypes = []
-
-    return fp.identify()
-
+def identify() -> str:
+    return fp.identify().decode()
 
 
 if __name__ == '__main__':
-    email = "sds@usm.cl"
+    email = "ejemplo@usm.cl"
     # enroll(email, FpFinger.INDICE_DERECHO)
     # verify(email)
-    identify()
+    print(f"El usuario es {identify()}")

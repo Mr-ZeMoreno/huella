@@ -23,12 +23,14 @@
 #include "glib.h"
 
 #include <json-glib/json-glib.h>
-#include <libfprint-2/fprint.h>
+#include <fprint.h>
 #include <glib-unix.h>
 
 #include "storage.h"
 #include "utilities.h"
 #include "consts.h"
+
+#define NO_IDENTIFICADO "<no identificado>"
 
 static void identify_quit (FpDevice* dev, IdentifyData* identify_data) {
     if (!fp_device_is_open (dev)) {
@@ -72,6 +74,14 @@ static void on_identify_cb (FpDevice *dev, FpPrint *match, FpPrint *print, gpoin
 
         g_print("IDENTIFICADO\n");
         g_print("Usuario: %s\n", user_id ? user_id : "<desconocido>");
+
+        IdentifyData* identify_data = user_data;
+
+        if (identify_data->user_email)
+            g_free(identify_data->user_email);
+
+        identify_data->user_email = g_strdup(user_id ? user_id : "<desconocido>");
+        identify_data->_fingerprint._clear_storage._session.ret_value = 0;
     } else {
         g_debug("Reporte de indentificador: Ninguna huella coincidió: %s",  error->message);
         g_print ("NO IDENTIFICADO\n");
@@ -107,43 +117,53 @@ static void on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data)
     start_identification (dev, identify_data); // Punto clave 2
 }
 
-int identify() {
+
+char *identify() {
     g_autoptr(FpContext) ctx = NULL;
     g_autoptr(IdentifyData) identify_data = NULL;
     GPtrArray *todos_los_dispositivos;
     FpDevice *dispositivo;
 
-    // setenv ("G_MESSAGES_DEBUG", "all", 0);
-    // setenv ("LIBUSB_DEBUG", "3", 0);
+    ctx = fp_context_new();
 
-    ctx = fp_context_new ();
-
-    todos_los_dispositivos = fp_context_get_devices (ctx);
+    todos_los_dispositivos = fp_context_get_devices(ctx);
     if (!todos_los_dispositivos) {
-        g_warning ("Impossible to get devices");
-        return EXIT_FAILURE;
+        g_warning("Impossible to get devices");
+        return NO_IDENTIFICADO;
     }
 
-    dispositivo = discover_device (todos_los_dispositivos);
+    dispositivo = discover_device(todos_los_dispositivos);
     if (!dispositivo) {
-        g_warning ("No devices detected.");
-        return EXIT_FAILURE;
+        g_warning("No devices detected.");
+        return NO_IDENTIFICADO;
     }
 
-    if (!fp_device_has_feature (dispositivo, FP_DEVICE_FEATURE_IDENTIFY)) {
-        g_warning ("Device %s does not support identification.",
-                    fp_device_get_name (dispositivo));
-        return EXIT_FAILURE;
+    if (!fp_device_has_feature(dispositivo, FP_DEVICE_FEATURE_IDENTIFY)) {
+        g_warning("Device %s does not support identification.", fp_device_get_name(dispositivo));
+        return NO_IDENTIFICADO;
     }
 
-    identify_data = g_new(IdentifyData, 1);
+    identify_data = g_new0(IdentifyData, 1); // Usa g_new0 para inicializar en 0
     identify_data->_fingerprint._clear_storage._session.ret_value = EXIT_FAILURE;
-    identify_data->_fingerprint._clear_storage._session.loop = g_main_loop_new (NULL, FALSE);
-    identify_data->_fingerprint._clear_storage.cancellable = g_cancellable_new ();
-    identify_data->_fingerprint._clear_storage.sigint_handler = g_unix_signal_add_full (G_PRIORITY_HIGH, SIGINT, sigint_cb, identify_data, NULL);
-    fp_device_open (dispositivo, identify_data->_fingerprint._clear_storage.cancellable, (GAsyncReadyCallback) on_device_opened, identify_data); // Punto clave 1
 
-    g_main_loop_run (identify_data->_fingerprint._clear_storage._session.loop);
+    identify_data->_fingerprint._clear_storage._session.loop = g_main_loop_new(NULL, FALSE);
+    identify_data->_fingerprint._clear_storage.cancellable = g_cancellable_new();
+    identify_data->_fingerprint._clear_storage.sigint_handler =
+        g_unix_signal_add_full(G_PRIORITY_HIGH, SIGINT, sigint_cb, identify_data, NULL);
 
-    return identify_data->_fingerprint._clear_storage._session.ret_value;
+    identify_data->user_email = g_malloc0(256);
+
+    fp_device_open(dispositivo, identify_data->_fingerprint._clear_storage.cancellable,
+                   (GAsyncReadyCallback)on_device_opened, identify_data);
+
+    g_main_loop_run(identify_data->_fingerprint._clear_storage._session.loop);
+
+    int ret = identify_data->_fingerprint._clear_storage._session.ret_value;
+
+    if (ret == 0 && identify_data->user_email != NULL && identify_data->user_email[0] != '\0') {
+        return identify_data->user_email;
+    }
+
+
+    return NO_IDENTIFICADO;
 }

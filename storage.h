@@ -21,7 +21,7 @@
 #pragma once
 
 #include <glib.h>
-#include <libfprint-2/fprint.h>
+#include <fprint.h>
 
 GPtrArray* gallery_data_load_from_json(const char *json_path);
 

@@ -19,7 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <libfprint-2/fprint.h>
+#include <fprint.h>
 #include "storage.h"
 #include "fp-print.h"
 #include "glib.h"
