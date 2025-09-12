@@ -2,4 +2,4 @@
 
 meson compile -C build
 
-cp ./build/*.so ./so/
+cp ./build/*.so ./py_package/so/
