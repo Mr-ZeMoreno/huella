@@ -2,4 +2,4 @@
 
 meson compile -C build
 
-cp ./build/*.c ./so/
+cp ./build/*.so ./so/
