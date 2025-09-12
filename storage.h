@@ -27,10 +27,12 @@ GPtrArray* gallery_data_load_from_json(const char *json_path);
 
 int save_into_json_file(gchar* user_id, char* base64, const char* path);
 
-FpPrint * print_create_template (FpDevice *dev, FpFinger finger, const gboolean load_existing);
+FpPrint * print_create_template (FpDevice *dev, FpFinger finger);
 
 FpPrint *print_data_load_from_json(const gchar *user_id, const gchar *json_path);
 
 gboolean finger_exists(FpFinger finger, const char* json_path);
 
 gboolean email_exists(const char* email, const char* json_path);
+
+gboolean update_fingerprint_by_email(const gchar *email, FpPrint *new_print, const gchar *json_path);

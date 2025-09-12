@@ -46,6 +46,7 @@
  typedef struct {
      FingerprintSession _fingerprint;
      char* user_email;
+     int retries;
  } VerifyData;
 
  typedef struct {
@@ -75,6 +76,9 @@ FpDevice * discover_device (GPtrArray *devices);
 FpFinger finger_chooser(int selected_index);
 const char * finger_to_string (FpFinger finger);
 
+// Callback genérico para abrir dispositivo
+void fingerprint_device_open(FpDevice *dev, GAsyncResult *res);
+
 // Callback genérico para cerrar dispositivo
 void fingerprint_device_closed(FpDevice* dev, GAsyncResult* res, void* user_data);
 void clear_storage_device_closed(FpDevice *dev, GAsyncResult *res, void *user_data);
@@ -102,3 +106,7 @@ gboolean sigint_cb(void* session);
 
 int save_data_into_member(FpPrint* print, char** base64);
 int input_user_email(char **user_email);
+
+void fingerprint_quit(FpDevice* dev, FingerprintSession* session);
+
+void enroll_quit(FpDevice* dev, FingerprintSession* session);

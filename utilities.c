@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "fp-device.h"
 #include "gio/gio.h"
 #include "glib-object.h"
 #include "glib.h"
@@ -131,6 +132,11 @@ int save_data_into_member (FpPrint* print, char** base64) {
     g_autofree guchar *data = NULL;
     gsize size;
 
+    if (print == NULL) {
+        g_warning("La huella es NULL.");
+        return -1;
+    }
+
     guint8 serialized = fp_print_serialize (print, &data, &size, &error);
 
     if (!serialized) {
@@ -146,18 +152,61 @@ int save_data_into_member (FpPrint* print, char** base64) {
 static void _device_closed_common(FpDevice *dev, GAsyncResult *res, GMainLoop *loop) {
     g_autoptr(GError) error = NULL;
 
-    fp_device_close_finish(dev, res, &error);
-
-    if (error)
+    if (!fp_device_close_finish(dev, res, &error))
         g_warning("Error al cerrar el dispositivo: %s", error->message);
+    else
+        g_print("Dispositivo cerrado correctamente.\n");
+
 
     if (loop)
         g_main_loop_quit(loop);
 }
 
+void fingerprint_device_open(FpDevice *dev, GAsyncResult *res){
+    g_autoptr(GError) error = NULL;
+
+    // Intentar abrir el dispositivo y manejar el error si ocurre
+    if (!fp_device_open_finish(dev, res, &error)) {
+        g_warning("No se pudo abrir el dispositivo: %s", error->message);
+        return;
+    }
+
+    g_print("Dispositivo abierto correctamente.\n");
+}
+
 void fingerprint_device_closed(FpDevice *dev, GAsyncResult *res, void *user_data){
     Session *session = user_data;
     _device_closed_common(dev, res, session->loop);
+}
+
+void fingerprint_quit(FpDevice *dev, FingerprintSession* session){
+    if (!fp_device_is_open (dev)) {
+        g_main_loop_quit (session->_clear_storage._session.loop);
+        return;
+    }
+
+    fp_device_close (dev, NULL, (GAsyncReadyCallback) fingerprint_device_closed, session);
+}
+
+static void enroll_device_closed(FpDevice* dev, GAsyncResult *res,FingerprintSession* session){
+
+    g_autoptr(GError) error = NULL;
+
+    fp_device_close_finish (dev, res, &error);
+
+    if (error)
+      g_warning ("Failed closing device %s", error->message);
+
+    g_main_loop_quit (session->_clear_storage._session.loop);
+}
+
+void enroll_quit(FpDevice *dev, FingerprintSession* session){
+    if (!fp_device_is_open (dev)) {
+        g_main_loop_quit (session->_clear_storage._session.loop);
+        return;
+    }
+
+    fp_device_close (dev, NULL, (GAsyncReadyCallback) enroll_device_closed, session);
 }
 
 void clear_storage_device_closed(FpDevice *dev, GAsyncResult *res, void *user_data){
@@ -210,12 +259,12 @@ void delete_data_free(DeleteData* session){
     g_free(session);
 }
 
-gboolean sigint_cb(gpointer user_data) {
+gboolean sigint_cb(void* user_data) {
     EnrollData *enroll_data = user_data;
 
     g_print("Cancelando enrolamiento...\n");
 
     g_cancellable_cancel(enroll_data->_fingerprint._clear_storage.cancellable);
 
-    return TRUE; // para indicar que manejamos la señal
+    return G_SOURCE_CONTINUE; // para indicar que manejamos la señal
 }

@@ -34,14 +34,6 @@
  #include "utilities.h"
  #include "verify.h"
 
- static void verify_quit (FpDevice *dev, VerifyData *verify_data) {
-     if (!fp_device_is_open (dev)) {
-         g_main_loop_quit (verify_data->_fingerprint._clear_storage._session.loop);
-         return;
-     }
-
-     fp_device_close (dev, NULL, (GAsyncReadyCallback) fingerprint_device_closed, (FingerprintSession*) verify_data);
- }
 
  static void start_verification (FpDevice *dev, VerifyData *verify_data);
 
@@ -57,7 +49,7 @@
          verify_data->_fingerprint._clear_storage._session.ret_value = EXIT_FAILURE;
 
          if (error->domain != FP_DEVICE_RETRY) {
-             verify_quit (dev, verify_data);
+             fingerprint_quit (dev, (FingerprintSession*) verify_data);
              return;
          }
      }
@@ -67,7 +59,8 @@
          return;
      }
 
-     verify_quit (dev, verify_data);
+
+     fingerprint_quit (dev, (FingerprintSession*) verify_data);
  }
 
  static void on_match_cb (FpDevice *dev, FpPrint *match, FpPrint *print, gpointer user_data, GError *error);
@@ -98,7 +91,7 @@
 
      if (!verify_print) {
          g_warning("No se pudo cargar la huella del usuario.");
-         verify_quit (dev, verify_data);
+         fingerprint_quit (dev, (FingerprintSession*) verify_data);
          return;
      }
 

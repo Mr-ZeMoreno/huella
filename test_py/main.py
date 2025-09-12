@@ -28,12 +28,12 @@ def enroll(email: str, finger_number: FpFinger) -> int:
     # Llamamos nuestra función
     return fp.enroll(email.encode('utf-8'), finger_number)
 
-def verify(email:str) -> int:
+def verify(email:str, retries:int=3) -> int:
     fp.verify.restype = ctypes.c_int
 
-    fp.verify.argtypes = [ctypes.c_char_p]
+    fp.verify.argtypes = [ctypes.c_char_p, ctypes.c_int]
 
-    return fp.verify(email.encode('utf-8'))
+    return fp.verify(email.encode('utf-8'), retries)
 
 def identify()->int:
     fp.identify.restype = ctypes.c_int
@@ -45,7 +45,7 @@ def identify()->int:
 
 
 if __name__ == '__main__':
-    email = "njkdan@usm.cl"
+    email = "sds@usm.cl"
     # enroll(email, FpFinger.INDICE_DERECHO)
     # verify(email)
     identify()

@@ -139,7 +139,7 @@ int save_into_json_file(gchar* user_id, char* base64, const char* path) {
 }
 
 // Aqui guardaremos la información en el binario
-FpPrint* print_create_template (FpDevice *dev, FpFinger finger, gboolean load_existing) {
+FpPrint* print_create_template (FpDevice *dev, FpFinger finger) {
     g_autoptr(GVariantDict) dict = NULL;
     g_autoptr(GDateTime) datetime = NULL;
     g_autoptr(GDate) date = NULL;
@@ -260,4 +260,68 @@ gboolean email_exists(const char* email, const char* json_path) {
 
     JsonObject *root_obj = json_node_get_object(root);
     return json_object_has_member(root_obj, email);
+}
+
+gboolean update_fingerprint_by_email(const gchar *email, FpPrint *new_print, const gchar *json_path) {
+    g_return_val_if_fail(email != NULL, FALSE);
+    g_return_val_if_fail(new_print != NULL, FALSE);
+    g_return_val_if_fail(json_path != NULL, FALSE);
+
+    g_autoptr(GError) error = NULL;
+    g_autoptr(JsonParser) parser = json_parser_new();
+
+    // Asegurar que el archivo JSON existe
+    if (!ensure_json_file_exists(json_path)) {
+        g_warning("El archivo JSON no existe y no se pudo crear.");
+        return FALSE;
+    }
+
+    // Cargar el archivo JSON
+    if (!json_parser_load_from_file(parser, json_path, &error)) {
+        g_warning("No se pudo cargar el archivo JSON: %s", error->message);
+        return FALSE;
+    }
+
+    JsonNode *root = json_parser_get_root(parser);
+    if (!JSON_NODE_HOLDS_OBJECT(root)) {
+        g_warning("El JSON no contiene un objeto válido");
+        return FALSE;
+    }
+
+    JsonObject *root_obj = json_node_get_object(root);
+
+    // Verificar que el email exista antes de actualizar
+    if (!json_object_has_member(root_obj, email)) {
+        g_warning("No existe una huella registrada para el correo '%s'.", email);
+        return FALSE;
+    }
+
+    // Serializar la nueva huella
+    guchar *serialized_data = NULL;
+    gsize serialized_len = 0;
+
+    if (!fp_print_serialize(new_print, &serialized_data, &serialized_len, &error)) {
+        g_warning("Error al serializar la huella: %s", error->message);
+        return FALSE;
+    }
+
+    // Convertir a base64
+    gchar *b64_data = g_base64_encode(serialized_data, serialized_len);
+    g_free(serialized_data);
+
+    // Reemplazar el valor correspondiente al email
+    json_object_set_string_member(root_obj, email, b64_data);
+    g_free(b64_data);
+
+    // Escribir el JSON de vuelta al archivo
+    g_autoptr(JsonGenerator) generator = json_generator_new();
+    json_generator_set_root(generator, root);
+
+    if (!json_generator_to_file(generator, json_path, &error)) {
+        g_warning("No se pudo guardar el archivo JSON actualizado: %s", error->message);
+        return FALSE;
+    }
+
+    g_message("Huella actualizada correctamente para '%s'", email);
+    return TRUE;
 }
