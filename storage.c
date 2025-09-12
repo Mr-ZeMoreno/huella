@@ -19,232 +19,133 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#define FP_COMPONENT "example-storage"
-
 #include <libfprint-2/fprint.h>
 #include "storage.h"
+#include "fp-print.h"
+#include "glib.h"
 
-#include <errno.h>
 #include <glib/gstdio.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 #include <json-glib/json-glib.h>
 
-#define STORAGE_FILE "test-storage.variant"
+#include <stdio.h>
+#include <glib.h>
 
-static char* get_print_data_descriptor (FpPrint *print, FpDevice *dev, FpFinger finger) {
-    const char* driver;
-    const char* dev_id;
+gboolean ensure_json_file_exists(const char *json_path) {
+    g_return_val_if_fail(json_path != NULL, FALSE);
 
-    if (print) {
-        driver = fp_print_get_driver (print);
-        dev_id = fp_print_get_device_id (print);
-    } else {
-        driver = fp_device_get_driver (dev);
-        dev_id = fp_device_get_device_id (dev);
+    FILE *file = fopen(json_path, "r");
+
+    if (file) {
+        fclose(file);
+        return TRUE; // El archivo ya existe
     }
 
-    return g_strdup_printf ("%s/%s/%x", driver, dev_id, finger);
-}
-
-static char* get_print_prefix_for_device (FpDevice *dev) {
-    const char* driver;
-    const char* dev_id;
-
-    driver = fp_device_get_driver (dev);
-    dev_id = fp_device_get_device_id (dev);
-
-    return g_strdup_printf ("%s/%s/", driver, dev_id);
-}
-
-static GVariantDict* load_data (void) {
-    GVariantDict* res;
-    GVariant* var;
-    gchar* contents = NULL;
-    gsize length = 0;
-
-    if (!g_file_get_contents (STORAGE_FILE, &contents, &length, NULL)) {
-        g_warning ("Error loading storage, assuming it is empty");
-        return g_variant_dict_new (NULL);
+    file = fopen(json_path, "w");
+    if (!file) {
+        g_warning("No se pudo crear el archivo JSON: %s", json_path);
+        return FALSE;
     }
 
-    var = g_variant_new_from_data (G_VARIANT_TYPE_VARDICT, contents, length, FALSE, g_free, contents);
+    fputs("{}", file);
+    fclose(file);
 
-    res = g_variant_dict_new (var);
-    g_variant_unref (var);
-    return res;
+    g_message("Archivo JSON creado: %s", json_path);
+    return FALSE; // Se tuvo que crear
 }
 
-static int save_data (GVariant* data) {
-    const gchar *contents = NULL;
-    gsize length;
+int generate_json(JsonBuilder* builder, const char* path){
+    JsonGenerator *generator = json_generator_new();
+    JsonNode *root = json_builder_get_root(builder);
+    json_generator_set_root(generator, root);
 
-    length = g_variant_get_size (data);
-    contents = (gchar *) g_variant_get_data (data);
+    GError *error = NULL;
+    if (!json_generator_to_file(generator, path, &error)) {
+        g_warning("Error al guardar JSON en %s: %s", path, error->message);
+        g_error_free(error);
+        g_object_unref(generator);
+        json_node_free(root);
+        g_object_unref(builder);
+        return -1;
+    }
 
-
-    g_variant_ref_sink (data);
-    g_variant_unref (data);
+    g_object_unref(generator);
+    g_object_unref(builder);
 
     return 0;
 }
 
-static FpPrint* load_print_from_data (GVariant* data) {
-    const guchar* stored_data = NULL;
-    gsize stored_len;
-    FpPrint* print;
-
+GPtrArray* gallery_data_load_from_json(const char *json_path) {
     g_autoptr(GError) error = NULL;
-    stored_data = (const guchar*) g_variant_get_fixed_array (data, &stored_len, 1);
-    print = fp_print_deserialize (stored_data, stored_len, &error);
+    g_autoptr(JsonParser) parser = json_parser_new();
+    g_autoptr(GPtrArray) gallery = g_ptr_array_new_with_free_func(g_object_unref);
 
-    if (error)
-        g_warning ("Error deserializing data: %s", error->message);
-
-    return print;
-}
-
-int print_data_save (FpPrint *print, FpFinger finger, gboolean update_fingerprint) {
-    g_autofree gchar *descr = get_print_data_descriptor (print, NULL, finger);
-
-    g_autoptr(GError) error = NULL;
-    g_autoptr(GVariantDict) dict = NULL;
-    g_autofree guchar *data = NULL;
-    GVariant *val;
-    gsize size;
-    int res;
-
-    dict = load_data ();
-
-    fp_print_serialize (print, &data, &size, &error);
-
-
-    if (error) {
-        g_warning ("Error serializing data: %s", error->message);
-        return -1;
+    if (!json_parser_load_from_file(parser, json_path, &error)) {
+        g_warning("No se pudo cargar el archivo JSON: %s", error->message);
+        return gallery;
     }
 
-    val = g_variant_new_fixed_array (G_VARIANT_TYPE ("y"), data, size, 1);
-    g_variant_dict_insert_value (dict, descr, val);
+    JsonNode *root = json_parser_get_root(parser);
 
-    res = save_data (g_variant_dict_end (dict));
+    if (!JSON_NODE_HOLDS_OBJECT(root)) {
+        g_warning("El JSON no es un objeto válido");
+        return gallery;
+    }
 
-    return res;
-}
+    JsonObject *root_obj = json_node_get_object(root);
+    GList *members = json_object_get_members(root_obj);
 
-FpPrint* print_data_load (FpDevice *dev, FpFinger finger) {
-    g_autofree gchar *descr = get_print_data_descriptor (NULL, dev, finger);
+    for (GList *l = members; l != NULL; l = l->next) {
+        const gchar *email = l->data;
+        const gchar *b64_data = json_object_get_string_member(root_obj, email);
 
-    g_autoptr(GVariant) val = NULL;
-    g_autoptr(GVariantDict) dict = NULL;
+        gsize bin_len;
+        guchar *bin_data = g_base64_decode(b64_data, &bin_len);
 
-    dict = load_data ();
-    val = g_variant_dict_lookup_value (dict, descr, G_VARIANT_TYPE ("ay"));
+        g_autoptr(GError) deser_error = NULL;
+        FpPrint *print = fp_print_deserialize(bin_data, bin_len, &deser_error);
+        g_free(bin_data);
 
-    if (val)
-        return load_print_from_data (val);
-
-    return NULL;
-}
-
-GPtrArray* gallery_data_load (FpDevice *dev) {
-    g_autoptr(GVariantDict) dict = NULL;
-    g_autoptr(GVariant) dict_variant = NULL;
-    g_autofree char *dev_prefix = NULL;
-    GPtrArray *gallery;
-    GVariantIter iter;
-    GVariant *value;
-    gchar *key;
-
-    gallery = g_ptr_array_new_with_free_func (g_object_unref);
-    dict = load_data ();
-    dict_variant = g_variant_dict_end (dict);
-    dev_prefix = get_print_prefix_for_device (dev);
-
-    g_variant_iter_init (&iter, dict_variant);
-    while (g_variant_iter_loop (&iter, "{sv}", &key, &value)) {
-        FpPrint *print;
-        const guchar *stored_data;
-        g_autoptr(GError) error = NULL;
-        gsize stored_len;
-
-        if (!g_str_has_prefix (key, dev_prefix))
-            continue;
-
-        stored_data = (const guchar *) g_variant_get_fixed_array (value, &stored_len, 1);
-        print = fp_print_deserialize (stored_data, stored_len, &error);
-
-        if (error) {
-            g_warning ("Error deserializing data: %s", error->message);
+        if (!print) {
+            g_warning("No se pudo deserializar la huella para %s: %s", email, deser_error->message);
             continue;
         }
 
-        g_ptr_array_add (gallery, print);
+        fp_print_set_username(print, email);  // útil si luego lo necesitas
+        g_ptr_array_add(gallery, print);
     }
 
-    return gallery;
+    g_list_free(members);
+    return g_steal_pointer(&gallery);
 }
 
-gboolean clear_saved_prints (FpDevice *dev, GError  **error) {
-    g_autoptr(GVariantDict) dict = NULL;
-    g_autoptr(GVariantDict) updated_dict = NULL;
-    g_autoptr(GVariant) dict_variant = NULL;
-    g_autofree char *dev_prefix = NULL;
-    GPtrArray *print_keys;
-    GVariantIter iter;
-    GVariant *value;
-    gchar *key;
 
-    print_keys = g_ptr_array_new_with_free_func (g_free);
-    dict = load_data ();
-    dict_variant = g_variant_dict_end (dict);
-    dev_prefix = get_print_prefix_for_device (dev);
+int save_into_json_file(gchar* user_id, char* base64, const char* path) {
+    g_return_val_if_fail(user_id != NULL, -1);
+    g_return_val_if_fail(base64 != NULL, -1);
+    g_return_val_if_fail(path != NULL, -1);
 
-    g_variant_iter_init (&iter, dict_variant);
-    while (g_variant_iter_loop (&iter, "{sv}", &key, &value)) {
-        if (!g_str_has_prefix (key, dev_prefix))
-            continue;
+    JsonBuilder *builder = json_builder_new();
+    json_builder_begin_object(builder);
 
-        g_ptr_array_add (print_keys, g_strdup (key));
-    }
+    // Escribe el usuario directamente como clave
+    json_builder_set_member_name(builder, user_id);
+    json_builder_add_string_value(builder, base64);
 
-    if (!print_keys->len)
-        return TRUE;
+    json_builder_end_object(builder);
 
-    updated_dict = load_data ();
-
-    for (guint i = 0; i < print_keys->len; ++i) {
-        key = g_ptr_array_index (print_keys, i);
-        if (!g_variant_dict_remove (updated_dict, key)) {
-            g_warning ("Print '%s' key not found!", key);
-            continue;
-        }
-
-        g_debug ("Dropping print '%s' from gallery", key);
-    }
-
-    save_data (g_variant_dict_end (updated_dict));
-
-    return TRUE;
+    return generate_json(builder, path);
 }
 
+// Aqui guardaremos la información en el binario
 FpPrint* print_create_template (FpDevice *dev, FpFinger finger, gboolean load_existing) {
     g_autoptr(GVariantDict) dict = NULL;
     g_autoptr(GDateTime) datetime = NULL;
     g_autoptr(GDate) date = NULL;
     g_autoptr(GVariant) existing_val = NULL;
-    g_autofree gchar *descr = get_print_data_descriptor (NULL, dev, finger);
     FpPrint *template = NULL;
     gint year, month, day;
-
-    if (load_existing) {
-        dict = load_data ();
-        existing_val = g_variant_dict_lookup_value (dict, descr, G_VARIANT_TYPE ("ay"));
-
-        if (existing_val != NULL)
-            template = load_print_from_data (existing_val);
-    }
 
     if (template == NULL) {
         template = fp_print_new (dev);
@@ -260,91 +161,103 @@ FpPrint* print_create_template (FpDevice *dev, FpFinger finger, gboolean load_ex
     return template;
 }
 
+FpPrint *print_data_load_from_json(const gchar *user_id, const gchar *json_path) {
+    g_return_val_if_fail(user_id != NULL, NULL);
+    g_return_val_if_fail(json_path != NULL, NULL);
 
-gboolean save_image_to_pgm (FpImage *img, const char *path) {
-    FILE *fd = fopen (path, "w");
-    size_t write_size;
-    const guchar *data = fp_image_get_data(img, &write_size);
-    int r;
+    g_autoptr(GError) error = NULL;
+    g_autoptr(JsonParser) parser = json_parser_new();
 
-    if (!fd) {
-        g_warning ("could not open '%s' for writing: %d", path, errno);
-        return FALSE;
+    if (!json_parser_load_from_file(parser, json_path, &error)) {
+        g_warning("No se pudo cargar el archivo JSON '%s': %s", json_path, error->message);
+        return NULL;
     }
 
-    r = fprintf (fd, "P5 %d %d 255\n", fp_image_get_width(img), fp_image_get_height(img));
-    if (r < 0) {
-        fclose (fd);
-        g_critical ("pgm header write failed, error %d", r);
-        return FALSE;
+    JsonNode *root = json_parser_get_root(parser);
+    if (!JSON_NODE_HOLDS_OBJECT(root)) {
+        g_warning("El archivo JSON no contiene un objeto válido en la raíz");
+        return NULL;
     }
 
-    r = fwrite (data, 1, write_size, fd);
-    if (r < write_size) {
-        fclose (fd);
-        g_critical ("short write (%d)", r);
-        return FALSE;
+    JsonObject *root_obj = json_node_get_object(root);
+    if (!json_object_has_member(root_obj, user_id)) {
+        g_warning("No hay huella registrada para el usuario '%s'", user_id);
+        return NULL;
     }
 
-    fclose (fd);
-    g_debug ("written to '%s'", path);
+    const gchar *b64_data = json_object_get_string_member(root_obj, user_id);
+    if (!b64_data || *b64_data == '\0') {
+        g_warning("El usuario '%s' tiene datos vacíos", user_id);
+        return NULL;
+    }
 
-    return TRUE;
+    gsize bin_len = 0;
+    guchar *bin_data = g_base64_decode(b64_data, &bin_len);
+
+    if (!bin_data || bin_len == 0) {
+        g_warning("Fallo al decodificar los datos base64 para el usuario '%s'", user_id);
+        return NULL;
+    }
+
+    g_autoptr(GError) deser_error = NULL;
+    FpPrint *print = fp_print_deserialize(bin_data, bin_len, &deser_error);
+    g_free(bin_data);
+
+    if (!print) {
+        g_warning("Fallo al deserializar la huella para '%s': %s", user_id,
+                  deser_error ? deser_error->message : "error desconocido");
+        return NULL;
+    }
+
+    fp_print_set_username(print, user_id);  // opcional
+
+    return print;  // el caller debe hacer g_object_unref()
 }
 
-gboolean print_image_save (FpPrint *print, const char *path) {
-    FpImage *img = NULL;
+gboolean finger_exists(FpFinger finger, const char* json_path) {
+    g_return_val_if_fail(json_path != NULL, FALSE);
 
-    g_return_val_if_fail (FP_IS_PRINT (print), FALSE);
-    g_return_val_if_fail (path != NULL, FALSE);
+    // Asegurar que el archivo existe antes de intentar cargarlo
+    ensure_json_file_exists(json_path);
 
-    img = fp_print_get_image (print);
+    GPtrArray *gallery = gallery_data_load_from_json(json_path);
+    if (!gallery) {
+        g_warning("La galería retornada es NULL");
+        return FALSE;
+    }
 
-    if (img)
-        return save_image_to_pgm (img, path);
+    if (gallery->len == 0) {
+        g_message("La galería está vacía");
+        return FALSE;
+    }
+
+    for (guint i = 0; i < gallery->len; i++) {
+        FpPrint *print = g_ptr_array_index(gallery, i);
+        if (fp_print_get_finger(print) == finger) {
+            return TRUE;  // Ya hay una huella para este dedo
+        }
+    }
 
     return FALSE;
 }
 
-int save_into_json_file(gchar* user_id, char* base64, const char* path) {
-    g_return_val_if_fail(user_id != NULL, -1);
-    g_return_val_if_fail(base64 != NULL, -1);
-    g_return_val_if_fail(path != NULL, -1);
+gboolean email_exists(const char* email, const char* json_path) {
+    g_return_val_if_fail(email != NULL, FALSE);
+    g_return_val_if_fail(json_path != NULL, FALSE);
 
-    JsonBuilder *builder = json_builder_new();
+    g_autoptr(GError) error = NULL;
+    g_autoptr(JsonParser) parser = json_parser_new();
 
-    json_builder_begin_object(builder);
-
-    // Agrega el ID de usuario
-    json_builder_set_member_name(builder, "user_id");
-    json_builder_add_string_value(builder, user_id);
-
-    // Agrega la cadena base64
-    json_builder_set_member_name(builder, "fingerprint_template");
-    json_builder_add_string_value(builder, base64);
-
-    json_builder_end_object(builder);
-
-    // Crear el nodo raíz del JSON
-    JsonGenerator *generator = json_generator_new();
-    JsonNode *root = json_builder_get_root(builder);
-    json_generator_set_root(generator, root);
-
-    // Escribir al archivo
-    GError *error = NULL;
-    if (!json_generator_to_file(generator, path, &error)) {
-        g_warning("Error al guardar JSON en %s: %s", path, error->message);
-        g_error_free(error);
-        g_object_unref(generator);
-        json_node_free(root);
-        g_object_unref(builder);
-        return -1;
+    if (!json_parser_load_from_file(parser, json_path, &error)) {
+        // Si no existe el archivo, asumimos que el email no existe aún
+        return FALSE;
     }
 
-    // Limpieza
-    g_object_unref(generator);
-    json_node_free(root);
-    g_object_unref(builder);
+    JsonNode *root = json_parser_get_root(parser);
+    if (!JSON_NODE_HOLDS_OBJECT(root)) {
+        return FALSE;
+    }
 
-    return 0;
+    JsonObject *root_obj = json_node_get_object(root);
+    return json_object_has_member(root_obj, email);
 }

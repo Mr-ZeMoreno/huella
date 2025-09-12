@@ -23,18 +23,14 @@
 #include <glib.h>
 #include <libfprint-2/fprint.h>
 
-int print_data_save (FpPrint *print, FpFinger finger, gboolean update_fingerprint);
+GPtrArray* gallery_data_load_from_json(const char *json_path);
 
-FpPrint * print_data_load (FpDevice *dev, FpFinger  finger);
-
-GPtrArray * gallery_data_load (FpDevice *dev);
-
-gboolean clear_saved_prints (FpDevice *dev, GError **error);
+int save_into_json_file(gchar* user_id, char* base64, const char* path);
 
 FpPrint * print_create_template (FpDevice *dev, FpFinger finger, const gboolean load_existing);
 
-gboolean print_image_save (FpPrint *print, const char *path);
+FpPrint *print_data_load_from_json(const gchar *user_id, const gchar *json_path);
 
-gboolean save_image_to_pgm (FpImage *img, const char *path);
+gboolean finger_exists(FpFinger finger, const char* json_path);
 
-int save_into_json_file(gchar* user_id, char* base64, const char* path);
+gboolean email_exists(const char* email, const char* json_path);

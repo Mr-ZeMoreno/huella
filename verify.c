@@ -19,249 +19,176 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "fp-device.h"
-#include "gio/gio.h"
-#include "glibconfig.h"
-#define FP_COMPONENT "example-verify"
+ #include "fp-device.h"
+ #include "fp-print.h"
+ #include "gio/gio.h"
+ #include "glibconfig.h"
 
-#include <stdio.h>
-#include <libfprint-2/fprint.h>
-#include <glib-unix.h>
+ #include <stdio.h>
+ #include <libfprint-2/fprint.h>
+ #include <glib-unix.h>
 
-#include "storage.h"
-#include "utilities.h"
+ #include "consts.h"
 
-static void verify_quit (FpDevice   *dev, VerifyData *verify_data) {
+ #include "storage.h"
+ #include "utilities.h"
+ #include "verify.h"
 
-    if (!fp_device_is_open (dev)) {
-        g_main_loop_quit (verify_data->_fingerprint._clear_storage._session.loop);
-        return;
-    }
+ static void verify_quit (FpDevice *dev, VerifyData *verify_data) {
+     if (!fp_device_is_open (dev)) {
+         g_main_loop_quit (verify_data->_fingerprint._clear_storage._session.loop);
+         return;
+     }
 
-    fp_device_close (dev, NULL, (GAsyncReadyCallback) fingerprint_device_closed, (FingerprintSession*) verify_data);
-}
+     fp_device_close (dev, NULL, (GAsyncReadyCallback) fingerprint_device_closed, (FingerprintSession*) verify_data);
+ }
 
-static void start_verification (FpDevice *dev, VerifyData *verify_data);
+ static void start_verification (FpDevice *dev, VerifyData *verify_data);
 
-static void on_verify_completed (FpDevice *dev, GAsyncResult *res, void *user_data) {
-    VerifyData *verify_data = user_data;
+ static void on_verify_completed (FpDevice *dev, GAsyncResult *res, void *user_data) {
+     VerifyData *verify_data = user_data;
 
-    g_autoptr(FpPrint) print = NULL;
-    g_autoptr(GError) error = NULL;
-    char buffer[20];
-    gboolean match;
+     g_autoptr(FpPrint) print = NULL;
+     g_autoptr(GError) error = NULL;
+     gboolean match;
 
-    if (!fp_device_verify_finish (dev, res, &match, &print, &error)) {
-        g_warning ("Failed to verify print: %s", error->message);
-        verify_data->_fingerprint._clear_storage._session.ret_value = EXIT_FAILURE;
+     if (!fp_device_verify_finish (dev, res, &match, &print, &error)) {
+         g_warning ("Fallo al verificar la huella: %s", error->message);
+         verify_data->_fingerprint._clear_storage._session.ret_value = EXIT_FAILURE;
 
-        if (error->domain != FP_DEVICE_RETRY) {
-            verify_quit (dev, verify_data);
-            return;
-        }
-    }
+         if (error->domain != FP_DEVICE_RETRY) {
+             verify_quit (dev, verify_data);
+             return;
+         }
+     }
 
-    g_print ("Verify again? [Y/n]? ");
-    if (fgets (buffer, sizeof (buffer), stdin) &&
-        (buffer[0] == 'Y' || buffer[0] == 'y' || buffer[0] == '\n')) {
-        start_verification (dev, verify_data);
-        return;
-    }
+     verify_quit (dev, verify_data);
+ }
 
-    verify_quit (dev, verify_data);
-}
+ static void on_match_cb (FpDevice *dev, FpPrint *match, FpPrint *print,
+                          gpointer user_data, GError *error) {
+     VerifyData *verify_data = user_data;
 
-static void on_match_cb (FpDevice *dev, FpPrint *match, FpPrint *print,
-             gpointer user_data, GError *error) {
-    VerifyData *verify_data = user_data;
+     if (error) {
+         g_warning ("Huella no coincide. Error de reintento reportado: %s", error->message);
+         return;
+     }
 
-    if (error) {
-        g_warning ("Match report: Finger not matched, retry error reported: %s",
-                    error->message);
-        return;
-    }
+     if (match) {
+         const GDate *date = fp_print_get_enroll_date (match);
+         char date_str[128] = "<desconocida>";
 
-    if (print && fp_print_get_image (print) &&
-        print_image_save (print, "verify.pgm"))
-        g_print ("Print image saved as verify.pgm\n");
+         verify_data->_fingerprint._clear_storage._session.ret_value = EXIT_SUCCESS;
 
-    if (match) {
-        const GDate *date = fp_print_get_enroll_date (match);
-        char date_str[128] = "<unknown>";
+         if (date && g_date_valid (date))
+             g_date_strftime (date_str, G_N_ELEMENTS (date_str), "%Y-%m-%d\0", date);
 
-        verify_data->_fingerprint._clear_storage._session.ret_value = EXIT_SUCCESS;
+         g_debug ("Informe de coincidencia: el dispositivo %s coincidió con el dedo %s exitosamente "
+                  "usando la huella %s, registrada el %s por el usuario %s",
+                  fp_device_get_name (dev),
+                  finger_to_string (fp_print_get_finger (match)),
+                  fp_print_get_description (match), date_str,
+                  fp_print_get_username (match));
 
-        if (date && g_date_valid (date))
-        g_date_strftime (date_str, G_N_ELEMENTS (date_str), "%Y-%m-%d\0",
-                            fp_print_get_enroll_date (match));
-        g_debug ("Match report: device %s matched finger %s successifully "
-                "with print %s, enrolled on date %s by user %s",
-                fp_device_get_name (dev),
-                finger_to_string (fp_print_get_finger (match)),
-                fp_print_get_description (match), date_str,
-                fp_print_get_username (match));
+         g_print ("HUELLA COINCIDE\n");
+     } else {
+         g_debug ("Informe de coincidencia: huella no coincide.");
+         g_print ("HUELLA NO COINCIDE\n");
+     }
+ }
 
-        g_print ("MATCH!\n");
-    }
-    else {
-        g_debug ("Match report: Finger not matched");
-        g_print ("NO MATCH!\n");
-    }
-}
+ static FpPrint* get_stored_print (FpDevice *dev, VerifyData *verify_data) {
+     FpPrint *verify_print;
 
-static FpPrint* get_stored_print (FpDevice *dev, VerifyData *verify_data) {
-    FpPrint *verify_print;
+     verify_print = print_data_load_from_json(verify_data->user_email, ENROLLED_JSON_PATH);
 
-    g_print ("Loading previously enrolled %s finger data...\n",
-            finger_to_string (verify_data->_fingerprint.finger));
+     verify_data->_fingerprint.finger = fp_print_get_finger(verify_print);
 
-    verify_print = print_data_load (dev, verify_data->_fingerprint.finger);
+     g_print ("Cargando datos previamente guardados para el dedo %s...\n",
+              finger_to_string (verify_data->_fingerprint.finger));
 
-    if (!verify_print) {
-        g_warning ("Failed to load fingerprint data");
-        g_warning ("Did you remember to enroll your %s finger first?",
-                    finger_to_string (verify_data->_fingerprint.finger));
-    }
+     return verify_print;
+ }
 
-    return verify_print;
-}
+ static void start_verification (FpDevice *dev, VerifyData *verify_data) {
+     if (!verify_data->user_email) {
+         g_warning("No se pudo obtener el correo electrónico.");
+         return;
+     }
 
-static void on_list_completed (FpDevice *dev, GAsyncResult *res, gpointer user_data) {
-    VerifyData *verify_data = user_data;
+     g_print("Correo electrónico ingresado: %s\n", verify_data->user_email);
 
-    g_autoptr(GPtrArray) prints = NULL;
-    g_autoptr(GError) error = NULL;
+     g_autoptr(FpPrint) verify_print = get_stored_print (dev, verify_data);
 
-    prints = fp_device_list_prints_finish (dev, res, &error);
+     if (!verify_print) {
+         g_warning("No se pudo cargar la huella del usuario.");
+         verify_quit (dev, verify_data);
+         return;
+     }
 
-    if (!error) {
-        FpPrint *verify_print = NULL;
-        g_autoptr(FpPrint) stored_print = NULL;
-        guint i;
+     g_print ("Huella cargada. Procediendo a la verificación...\n");
 
-        if (!prints->len) {
-            g_warning ("No prints saved on device");
-            verify_quit (dev, verify_data);
-            return;
-        }
+     fp_device_verify(dev, verify_print, verify_data->_fingerprint._clear_storage.cancellable,
+                      on_match_cb, verify_data, NULL, (GAsyncReadyCallback) on_verify_completed, verify_data);
+ }
 
-        stored_print = get_stored_print (dev, verify_data);
+ static void on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data) {
+     VerifyData *verify_data = user_data;
 
-        for (i = 0; i < prints->len; ++i) {
-            FpPrint *print = prints->pdata[i];
+     g_autoptr(GError) error = NULL;
 
-            if (stored_print && fp_print_equal (stored_print, print))
-                /* If the private print data matches, let's use the stored print
-                * as it contains more metadata to show */
-                print = stored_print;
+     if (!fp_device_open_finish (dev, res, &error)) {
+         g_warning ("No se pudo abrir el dispositivo: %s", error->message);
+         verify_quit (dev, verify_data);
+         return;
+     }
 
-            if (fp_print_get_finger (print) == verify_data->_fingerprint.finger &&
-                g_strcmp0 (fp_print_get_username (print), g_get_user_name ()) == 0) {
-                const GDate *verify_print_date = NULL;
-                const GDate *print_date = fp_print_get_enroll_date (print);
+     g_print ("Dispositivo abierto correctamente.\n");
 
-                if (verify_print)
-                    verify_print_date = fp_print_get_enroll_date (verify_print);
+     start_verification (dev, verify_data);
+ }
 
-                if (!verify_print || !print_date || !verify_print_date || g_date_compare (print_date, verify_print_date) >= 0)
-                    verify_print = print;
-            }
-        }
+ int verify(char* user_email) {
 
-        if (!verify_print) {
-            verify_quit (dev, verify_data);
-            return;
-        }
+     printf("pass");
+     VerifyData* verify_data = g_new(VerifyData, 1);
+     g_autoptr(FpContext) ctx = NULL;
+     GPtrArray *devices;
+     FpDevice *dev;
 
-        g_debug ("Comparing print with %s",
-                fp_print_get_description (verify_print));
+     // setenv ("G_MESSAGES_DEBUG", "all", 0);
+     // setenv ("LIBUSB_DEBUG", "3", 0);
 
-        g_print ("Print loaded. Time to verify!\n");
-        fp_device_verify (dev, verify_print, verify_data->_fingerprint._clear_storage.cancellable, on_match_cb, verify_data, NULL, (GAsyncReadyCallback) on_verify_completed, verify_data);
-    }
-    else {
-        g_warning ("Loading prints failed with error %s", error->message);
-        verify_quit (dev, verify_data);
-    }
-}
+     ctx = fp_context_new ();
 
-static void start_verification (FpDevice *dev, VerifyData *verify_data) {
-    if (verify_data->_fingerprint.finger == FP_FINGER_UNKNOWN) {
-        g_print ("Choose the finger to verify:\n");
-        verify_data->_fingerprint.finger = finger_chooser ();
-    }
+     devices = fp_context_get_devices (ctx);
+     if (!devices) {
+         g_warning ("No se pudo obtener la lista de dispositivos.");
+         return EXIT_FAILURE;
+     }
 
-    if (verify_data->_fingerprint.finger == FP_FINGER_UNKNOWN) {
-        g_warning ("Unknown finger selected");
-        verify_data->_fingerprint._clear_storage._session.ret_value = EXIT_FAILURE;
-        verify_quit (dev, verify_data);
-        return;
-    }
+     dev = discover_device (devices);
+     if (!dev) {
+         g_warning ("No se detectaron dispositivos.");
+         return EXIT_FAILURE;
+     }
 
-    if (fp_device_has_feature (dev, FP_DEVICE_FEATURE_STORAGE)) {
-        g_print ("Creating finger template, using device storage...\n");
-        fp_device_list_prints (dev, NULL, (GAsyncReadyCallback) on_list_completed, verify_data);
-    }
-    else {
-        g_autoptr(FpPrint) verify_print = get_stored_print (dev, verify_data);
 
-        if (!verify_print) {
-            verify_quit (dev, verify_data);
-            return;
-        }
+     verify_data->user_email = g_strdup(user_email);
+     verify_data->_fingerprint._clear_storage._session.ret_value = EXIT_FAILURE;
+     verify_data->_fingerprint._clear_storage._session.loop = g_main_loop_new(NULL, FALSE);
+     verify_data->_fingerprint._clear_storage.cancellable = g_cancellable_new();
+     verify_data->_fingerprint._clear_storage.sigint_handler = g_unix_signal_add_full(
+         G_PRIORITY_HIGH, SIGINT, sigint_cb, verify_data, NULL);
 
-        g_print ("Print loaded. Time to verify!\n");
-        fp_device_verify(dev, verify_print, verify_data->_fingerprint._clear_storage.cancellable, on_match_cb, verify_data, NULL, (GAsyncReadyCallback) on_verify_completed, verify_data);
-    }
-}
+     fp_device_open(dev, verify_data->_fingerprint._clear_storage.cancellable,
+                    (GAsyncReadyCallback) on_device_opened, verify_data);
 
-static void on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data) {
-    VerifyData *verify_data = user_data;
+     g_main_loop_run(verify_data->_fingerprint._clear_storage._session.loop);
 
-    g_autoptr(GError) error = NULL;
+     int ret = verify_data->_fingerprint._clear_storage._session.ret_value;
 
-    if (!fp_device_open_finish (dev, res, &error)) {
-        g_warning ("Failed to open device: %s", error->message);
-        verify_quit (dev, verify_data);
-        return;
-    }
+     verify_data_free(verify_data);
 
-    g_print ("Opened device. ");
-
-    start_verification (dev, verify_data);
-}
-
-int main() {
-    g_autoptr(FpContext) ctx = NULL;
-    g_autoptr(VerifyData) verify_data = NULL;
-    GPtrArray *devices;
-    FpDevice *dev;
-
-    setenv ("G_MESSAGES_DEBUG", "all", 0);
-    setenv ("LIBUSB_DEBUG", "3", 0);
-
-    ctx = fp_context_new ();
-
-    devices = fp_context_get_devices (ctx);
-    if (!devices) {
-        g_warning ("Impossible to get devices");
-        return EXIT_FAILURE;
-    }
-
-    dev = discover_device (devices);
-    if (!dev) {
-        g_warning ("No devices detected.");
-        return EXIT_FAILURE;
-    }
-
-    verify_data = g_new0 (VerifyData, 1);
-    verify_data->_fingerprint._clear_storage._session.ret_value = EXIT_FAILURE;
-    verify_data->_fingerprint._clear_storage._session.loop = g_main_loop_new (NULL, FALSE);
-    verify_data->_fingerprint._clear_storage.cancellable = g_cancellable_new ();
-    verify_data->_fingerprint._clear_storage.sigint_handler = g_unix_signal_add_full (G_PRIORITY_HIGH, SIGINT, sigint_cb,verify_data, NULL);
-    fp_device_open (dev, verify_data->_fingerprint._clear_storage.cancellable, (GAsyncReadyCallback) on_device_opened, verify_data);
-
-    g_main_loop_run (verify_data->_fingerprint._clear_storage._session.loop);
-
-    return verify_data->_fingerprint._clear_storage._session.ret_value;
-}
+     return ret;
+ }

@@ -31,7 +31,17 @@
 
 #include "storage.h"
 #include "utilities.h"
+#include "consts.h"
+#include "enroll.h"
 
+static void on_enroll_progress (FpDevice *device, gint completed_stages, FpPrint  *print, gpointer  user_data, GError *error) {
+    if (error) {
+        g_warning ("Enrolamiento: La etapa %d de %d ha fallado con error: %s", completed_stages, fp_device_get_nr_enroll_stages (device), error->message);
+        return;
+    }
+
+    g_print ("Enrolamiento: Etapa %d de %d pasada. Yujuu!\n", completed_stages, fp_device_get_nr_enroll_stages (device));
+}
 
 static void on_enroll_completed (FpDevice *dev, GAsyncResult *res, void *user_data) {
     EnrollData *enroll_data = user_data;
@@ -51,27 +61,12 @@ static void on_enroll_completed (FpDevice *dev, GAsyncResult *res, void *user_da
             enroll_data->_fingerprint._clear_storage._session.ret_value = EXIT_FAILURE;
         }
 
-       save_into_json_file(enroll_data->user_email, enroll_data->base64, "enrolled.json");
-    }
-    else {
+       save_into_json_file(enroll_data->user_email, enroll_data->base64, ENROLLED_JSON_PATH);
+    } else {
         g_warning ("Enrolamiento fallido, código %s", error->message);
     }
 
     fp_device_close (dev, NULL, (GAsyncReadyCallback) fingerprint_device_closed, (FingerprintSession*) enroll_data);
-}
-
-static void on_enroll_progress (FpDevice *device,
-                                gint      completed_stages,
-                                FpPrint  *print,
-                                gpointer  user_data,
-                                GError   *error) {
-    if (error) {
-        g_warning ("Enrolamiento: La etapa %d de %d ha fallado con error: %s", completed_stages, fp_device_get_nr_enroll_stages (device), error->message);
-        return;
-    }
-
-    g_print ("Enrolamiento: Etapa %d de %d pasada. Yujuu!\n", completed_stages,
-            fp_device_get_nr_enroll_stages (device));
 }
 
 static void on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data) {
@@ -80,7 +75,7 @@ static void on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data)
 
     g_autoptr(GError) error = NULL;
 
-    if (!(input_user_email(&enroll_data->user_email) == 0)) {
+    if (!enroll_data->user_email){
         g_warning("No se pudo obtener el correo.");
         return;
     }
@@ -104,31 +99,36 @@ static void on_device_opened (FpDevice *dev, GAsyncResult *res, void *user_data)
 
     print_template = print_create_template (dev, enroll_data->_fingerprint.finger, enroll_data->update_fingerprint);
     fp_device_enroll (dev, print_template, enroll_data->_fingerprint._clear_storage.cancellable,
-                    on_enroll_progress, NULL, NULL,
-                    (GAsyncReadyCallback) on_enroll_completed,
-                    enroll_data);
+                    on_enroll_progress, NULL, NULL, (GAsyncReadyCallback) on_enroll_completed, enroll_data);
 }
 
-int main () {
+int enroll(char* email, int finger_number) {
     g_autoptr(FpContext) ctx = NULL;
     g_autoptr(EnrollData) enroll_data = g_new0(EnrollData, 1);
     GPtrArray *all_devices;
     FpDevice *device;
     FpFinger finger;
 
-    g_print ("Este programa registrará el dedo seleccionado sobrescribiendo cualquier huella"
-             " del mismo dedo que haya sido registrada anteriormente. Las actualizaciones de huellas"
-             " sin borrar los datos anteriores son posibles en dispositivos que lo soporten. Ctrl+C interrumpe la ejecución del programa.\n");
+    // Verificar si el email ya existe
+    if (email_exists(email, ENROLLED_JSON_PATH)) {
+        g_warning("El correo %s ya tiene una huella registrada.", email);
+        return EXIT_FAILURE;
+    }
 
-    g_print ("Elige el dedo que deseas registrar:\n");
-    finger = finger_chooser ();
+    finger = finger_chooser(finger_number);
 
     if (finger == FP_FINGER_UNKNOWN) {
         g_warning ("Se seleccionó un dedo desconocido");
         return EXIT_FAILURE;
     }
 
-    setenv ("G_MESSAGES_DEBUG", "all", 0);
+    // Verificar si el dedo ya fue registrado (por otro email)
+    if (finger_exists(finger, ENROLLED_JSON_PATH)) {
+        g_warning("La huella del dedo %s ya está registrada.", finger_to_string(finger));
+        return EXIT_FAILURE;
+    }
+
+    // setenv ("G_MESSAGES_DEBUG", "all", 0);
 
     ctx = fp_context_new ();
 
@@ -144,9 +144,8 @@ int main () {
         return EXIT_FAILURE;
     }
 
-    enroll_data = g_new0 (EnrollData, 1);
-
     enroll_data->_fingerprint.finger = finger;
+    enroll_data->user_email = email;
     enroll_data->_fingerprint._clear_storage._session.ret_value = EXIT_FAILURE;
     enroll_data->_fingerprint._clear_storage._session.loop = g_main_loop_new (NULL, FALSE);
     enroll_data->_fingerprint._clear_storage.cancellable = g_cancellable_new ();

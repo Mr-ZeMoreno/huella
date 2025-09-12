@@ -24,8 +24,8 @@
 #include "gio/gio.h"
 #include "glibconfig.h"
 #include <libfprint-2/fprint.h>
- #include <glib.h>
- #include <glib-unix.h>
+#include <glib.h>
+#include <glib-unix.h>
 
  typedef struct {
      GMainLoop *loop;
@@ -45,6 +45,7 @@
 
  typedef struct {
      FingerprintSession _fingerprint;
+     char* user_email;
  } VerifyData;
 
  typedef struct {
@@ -71,7 +72,7 @@
 
 // Funciones utilitarias
 FpDevice * discover_device (GPtrArray *devices);
-FpFinger finger_chooser (void);
+FpFinger finger_chooser(int selected_index);
 const char * finger_to_string (FpFinger finger);
 
 // Callback genérico para cerrar dispositivo

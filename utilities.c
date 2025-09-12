@@ -23,7 +23,6 @@
 #include "glib-object.h"
 #include "glib.h"
 #include "glibconfig.h"
-#define FP_COMPONENT "example-utilities"
 
 #include <libfprint-2/fprint.h>
 #include <stdio.h>
@@ -102,22 +101,11 @@ const char* finger_to_string (FpFinger finger) {
     }
 }
 
-FpFinger finger_chooser () {
-    int i = FP_FINGER_UNKNOWN;
-
-    for (i = FP_FINGER_FIRST; i <= FP_FINGER_LAST; ++i)
-        g_print ("  [%d] %s\n", (i - FP_FINGER_FIRST), finger_to_string (i));
-
-    g_print ("> ");
-    if (!scanf ("%d%*c", &i))
+FpFinger finger_chooser(int value) {
+    if (value < FP_FINGER_FIRST || value > FP_FINGER_LAST)
         return FP_FINGER_UNKNOWN;
 
-    i += FP_FINGER_FIRST;
-
-    if (i < FP_FINGER_FIRST || i > FP_FINGER_LAST)
-        return FP_FINGER_UNKNOWN;
-
-    return i;
+    return (FpFinger)value;
 }
 
 int input_user_email(char **user_email) {
@@ -197,8 +185,16 @@ void enroll_data_free(EnrollData* session){
     fingerprint_session_data_free((FingerprintSession*) session);
 }
 
-void verify_data_free(VerifyData* session){
-    fingerprint_session_data_free((FingerprintSession*) session);
+void verify_data_free(VerifyData *data) {
+    if (!data) return;
+    g_free(data->user_email);
+    if (data->_fingerprint._clear_storage._session.loop)
+        g_main_loop_unref(data->_fingerprint._clear_storage._session.loop);
+    if (data->_fingerprint._clear_storage.cancellable)
+        g_object_unref(data->_fingerprint._clear_storage.cancellable);
+    if (data->_fingerprint._clear_storage.sigint_handler)
+        g_source_remove(data->_fingerprint._clear_storage.sigint_handler);
+    g_free(data);
 }
 
 void clear_storage_data_free(ClearStorageData *session) {
@@ -214,9 +210,12 @@ void delete_data_free(DeleteData* session){
     g_free(session);
 }
 
-gboolean sigint_cb (void* session) {
-    FingerprintSession* s = session;
-    g_cancellable_cancel (s->_clear_storage.cancellable);
+gboolean sigint_cb(gpointer user_data) {
+    EnrollData *enroll_data = user_data;
 
-    return G_SOURCE_CONTINUE;
+    g_print("Cancelando enrolamiento...\n");
+
+    g_cancellable_cancel(enroll_data->_fingerprint._clear_storage.cancellable);
+
+    return TRUE; // para indicar que manejamos la señal
 }
