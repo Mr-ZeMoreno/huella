@@ -1,19 +1,37 @@
+/*
+ * Biblioteca de enrolamiento e identificación sincrona
+ * pensada para ser usada como biblioteca Python.
+ *
+ * Copyrights (c) 2025 Josecarlos Vidal <jvidalq@usm.cl>
+ *
+ * Esta biblioteca es software libre; usted puede redistribuirla y/o
+ * modificarla bajo los términos de la Licencia Pública Menor de GNU
+ * tal como la publica la Free Software Foundation; ya sea
+ * la versión 2.1 de la Licencia, o (a su elección) cualquier versión posterior.
+ *
+ * Esta biblioteca se distribuye con la esperanza de que sea útil,
+ * pero SIN NINGUNA GARANTÍA; ni siquiera la garantía implícita de
+ * COMERCIALIZACIÓN o IDONEIDAD PARA UN PROPÓSITO PARTICULAR. Consulte la
+ * Licencia Pública Menor de GNU para más detalles.
+ *
+ * Usted debe haber recibido una copia de la Licencia Pública Menor de GNU
+ * junto con esta biblioteca; si no es así, escriba a la Free Software Foundation, Inc.,
+ * 51 Franklin Street, Quinto Piso, Boston, MA 02110-1301, USA.
+ */
 
 #include "fp-device.h"
-#include "glib.h"
 
 #include <json-glib/json-glib.h>
 #include <fprint.h>
-#include <glib-unix.h>
 
-#include "storage.h"
-#include "consts.h"
 #include "utilities.h"
+#include "fingerprint.h"
+
+#define ENROLLED_JSON_PATH "enrolled.json"
 
 static FpContext *ctx = NULL;
 static FpDevice *device = NULL;
 static char user_buffer[256] = "<no identificado>";
-// static FpPrint *print = NULL;
 static char* base64 = NULL;
 
 int fingerprint_init() {
@@ -23,7 +41,7 @@ int fingerprint_init() {
     GPtrArray *devices = fp_context_get_devices(ctx);
     if (!devices || devices->len == 0) return -2;
 
-    device = g_ptr_array_index(devices, 0); // Suponemos el primero
+    device = g_ptr_array_index(devices, 0);
     g_object_ref(device);
     g_ptr_array_unref(devices);
 

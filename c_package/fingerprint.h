@@ -1,4 +1,6 @@
 /*
+ * Biblioteca de enrolamiento e identificación sincrona
+ * pensada para ser usada como biblioteca Python.
  *
  * Copyrights (c) 2025 Josecarlos Vidal <jvidalq@usm.cl>
  *
@@ -16,17 +18,10 @@
  * junto con esta biblioteca; si no es así, escriba a la Free Software Foundation, Inc.,
  * 51 Franklin Street, Quinto Piso, Boston, MA 02110-1301, USA.
  */
- #pragma once
 
-#include <fprint.h>
-#include <glib.h>
-#include <glib-unix.h>
+#pragma once
 
-
-int save_data_into_member(FpPrint* print, char** base64);
-
-GPtrArray* gallery_data_load_from_json(const char *json_path);
-
-int save_into_json_file(const char* user_id, char* base64, const char* path);
-
-FpPrint *print_data_load_from_json(const gchar *user_id, const gchar *json_path);
+int fingerprint_init();              // Inicializa contextos, abre dispositivo
+const char* fingerprint_identify();  // Corre la identificación
+const int fingerprint_enroll(const char* username, int finger_number); // Corre el enrolamiento
+void fingerprint_cleanup();          // Cierra y libera
