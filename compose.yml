@@ -1,7 +1,0 @@
-services:
-  fprint-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - ./py_package/so:/app/py_package/so
