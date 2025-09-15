@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI
 from http import HTTPStatus
 from fingerprint import enroll , FpFinger, identify, NO_IDENTIFICADO
-
+from pydantic import EmailStr
 
 app = FastAPI()
 
@@ -14,7 +14,7 @@ async def async_function(function, *args):
     return await loop.run_in_executor(executor, function, *args)
 
 @app.get("/enroll/{email}")
-async def enroll_user(email: str, finger:FpFinger = FpFinger.INDICE_DERECHO):
+async def enroll_user(email: EmailStr, finger:FpFinger = FpFinger.INDICE_DERECHO):
     ret = await async_function(enroll, email, finger)
 
     if ret == 0:
@@ -29,21 +29,25 @@ def list_fingers():
         for finger in FpFinger
     ]
 
+
+
+
+MAX_IDENTIFY_ATTEMPTS = 5
+
 @app.get("/identify")
 async def identify_user():
-    ret = await async_function(identify)
+    for attempt in range(1, MAX_IDENTIFY_ATTEMPTS + 1):
+        ret = await async_function(identify)
 
-    if ret.lower() != NO_IDENTIFICADO.lower():
-        return {"status": HTTPStatus.OK, "user": ret}
-    elif ret.lower() == NO_IDENTIFICADO.lower():
-        return {"status": HTTPStatus.BAD_REQUEST, "message": "Usuario no identificado"}
-    else:
-        return {"status": HTTPStatus.INTERNAL_SERVER_ERROR, "message": "Failed to identify user"}
+        if ret.lower() != NO_IDENTIFICADO.lower():
+            return {
+                "status": HTTPStatus.OK,
+                "user": ret,
+                "attempt": attempt
+            }
 
-# @app.get("/verify/{email}")
-# async def verify_user(email: str):
-#     ret = await async_function(verify, email, 1)
-#     if ret == 0:
-#         return {"status": HTTPStatus.OK, "message": "Usuario identificado"}
-#     else:
-#         return {"status": HTTPStatus.INTERNAL_SERVER_ERROR, "message": "Failed to verify user"}
+    # Si llega aquí, no se identificó ningún usuario
+    return {
+        "status": HTTPStatus.BAD_REQUEST,
+        "message": f"Usuario no identificado tras {MAX_IDENTIFY_ATTEMPTS} intentos"
+    }

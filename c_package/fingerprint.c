@@ -99,6 +99,9 @@ const int fingerprint_enroll(const char *username, int finger_number){
 };
 
 const char* fingerprint_identify() {
+
+    if (check_json(ENROLLED_JSON_PATH) != 0) return "<error: json no existe, intente enrolando un usuario primero>";
+
     GPtrArray *gallery = gallery_data_load_from_json(ENROLLED_JSON_PATH);
     if (!gallery) return "<error galería>";
 

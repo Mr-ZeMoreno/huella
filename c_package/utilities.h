@@ -30,3 +30,4 @@ GPtrArray* gallery_data_load_from_json(const char *json_path);
 int save_into_json_file(const char* user_id, char* base64, const char* path);
 
 FpPrint *print_data_load_from_json(const gchar *user_id, const gchar *json_path);
+int check_json(const char* path);

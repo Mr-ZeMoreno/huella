@@ -24,44 +24,6 @@
 #include "fp-print.h"
 #include <json-glib/json-glib.h>
 
-const char* finger_to_string (FpFinger finger) {
-    switch (finger) {
-    case FP_FINGER_LEFT_THUMB:
-        return "pulgar izquierdo";
-
-    case FP_FINGER_LEFT_INDEX:
-        return "indice izquierdo";
-
-    case FP_FINGER_LEFT_MIDDLE:
-        return "medio izquierdo";
-
-    case FP_FINGER_LEFT_RING:
-        return "anular izquierdo";
-
-    case FP_FINGER_LEFT_LITTLE:
-        return "meñique izquierdo";
-
-    case FP_FINGER_RIGHT_THUMB:
-        return "pulgar derecho";
-
-    case FP_FINGER_RIGHT_INDEX:
-        return "indice derecho";
-
-    case FP_FINGER_RIGHT_MIDDLE:
-        return "medio derecho";
-
-    case FP_FINGER_RIGHT_RING:
-        return "anular derecho";
-
-    case FP_FINGER_RIGHT_LITTLE:
-        return "meñique derecho";
-
-    case FP_FINGER_UNKNOWN:
-    default:
-        return "desconocido";
-    }
-}
-
 int save_data_into_member (FpPrint* print, char** base64) {
     g_autoptr(GError) error = NULL;
     g_autofree guchar *data = NULL;
@@ -149,19 +111,52 @@ int generate_json(JsonBuilder* builder, const char* path){
     return 0;
 }
 
+int check_json(const char* path){
+    if(g_file_test(path, G_FILE_TEST_EXISTS)) return 0;
+
+    return 1;
+}
+
 int save_into_json_file(const char* user_id, char* base64, const char* path) {
     g_return_val_if_fail(user_id != NULL, -1);
     g_return_val_if_fail(base64 != NULL, -1);
     g_return_val_if_fail(path != NULL, -1);
 
-    JsonBuilder *builder = json_builder_new();
-    json_builder_begin_object(builder);
+    g_autoptr(GError) error = NULL;
+    g_autoptr(JsonParser) parser = json_parser_new();
+    JsonObject *root_obj = json_object_new();
 
-    // Escribe el usuario directamente como clave
-    json_builder_set_member_name(builder, user_id);
-    json_builder_add_string_value(builder, base64);
+    // Si el archivo existe, lo cargamos
+    if (check_json(path) == 0) {
+        if (!json_parser_load_from_file(parser, path, &error)) {
+            g_warning("No se pudo cargar el JSON existente: %s", error->message);
+            g_error_free(error); // continuamos con JSON vacío
+        } else {
+            JsonNode *root = json_parser_get_root(parser);
+            if (JSON_NODE_HOLDS_OBJECT(root)) {
+                root_obj = json_node_dup_object(root);
+            }
+        }
+    }
 
-    json_builder_end_object(builder);
+    // Añadir o reemplazar usuario
+    json_object_set_string_member(root_obj, user_id, base64);
 
-    return generate_json(builder, path);
+    // Guardar el JSON actualizado
+    JsonNode *root_node = json_node_new(JSON_NODE_OBJECT);
+    json_node_take_object(root_node, root_obj);
+
+    JsonGenerator *generator = json_generator_new();
+    json_generator_set_root(generator, root_node);
+
+    if (!json_generator_to_file(generator, path, &error)) {
+        g_warning("Error al guardar JSON en %s: %s", path, error->message);
+        json_node_free(root_node);
+        g_object_unref(generator);
+        return -1;
+    }
+
+    json_node_free(root_node);
+    g_object_unref(generator);
+    return 0;
 }
