@@ -1,11 +1,10 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from fastapi import FastAPI
-from fastapi import WebSocket, WebSocketDisconnect
-# from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from http import HTTPStatus
-from fingerprint import enroll , FpFinger, identify, NO_IDENTIFICADO
+from fingerprint import enroll , FpFinger, identify, NO_IDENTIFICADO, fp_init, fp_cleanup
 from pydantic import EmailStr
+import json
 
 app = FastAPI()
 
@@ -41,51 +40,91 @@ def list_fingers():
 
 MAX_IDENTIFY_ATTEMPTS = 5
 
-@app.get("/identify")
-async def identify_user():
-    for attempt in range(1, MAX_IDENTIFY_ATTEMPTS + 1):
-        ret = await async_function(identify)
+# @app.get("/identify")
+# async def identify_user():
+#     for attempt in range(1, MAX_IDENTIFY_ATTEMPTS + 1):
+#         ret = await async_function(identify)
 
-        if ret.lower() != NO_IDENTIFICADO.lower():
-            return {
-                "status": HTTPStatus.OK,
-                "user": ret,
-                "attempt": attempt
-            }
+#         if ret.lower() != NO_IDENTIFICADO.lower():
+#             return {
+#                 "status": HTTPStatus.OK,
+#                 "user": ret,
+#                 "attempt": attempt
+#             }
 
-    # Si llega aquí, no se identificó ningún usuario
-    return {
-        "status": HTTPStatus.BAD_REQUEST,
-        "message": f"Usuario no identificado tras {MAX_IDENTIFY_ATTEMPTS} intentos"
-    }
+#     # Si llega aquí, no se identificó ningún usuario
+#     return {
+#         "status": HTTPStatus.BAD_REQUEST,
+#         "message": f"Usuario no identificado tras {MAX_IDENTIFY_ATTEMPTS} intentos"
+#     }
 
 
+# Crear un semáforo global
+semaforo_ws = asyncio.Semaphore(1)
+disconnected_event = asyncio.Event()
 
 @app.websocket("/ws/identify")
 async def websocket_identify(websocket: WebSocket):
     await websocket.accept()
 
-    MAX_ATTEMPTS = 5
-    attempt = 1
+    # Intentamos adquirir el semáforo antes de procesar la solicitud
+    async with semaforo_ws:
+        MAX_ATTEMPTS = 5
+        attempt = 1
 
-    try:
-        while attempt <= MAX_ATTEMPTS:
-            await websocket.send_text(f"Intento {attempt} de {MAX_ATTEMPTS}...")
+        # Restablecer el evento de desconexión antes de empezar
+        disconnected_event.clear()
 
-            ret = await async_function(identify)
+        try:
+            while attempt <= MAX_ATTEMPTS:
+                # Verificar si el cliente está desconectado antes de cada intento
+                if disconnected_event.is_set():
+                    await websocket.send_text("🚫 El cliente se ha desconectado.")
+                    break
 
-            if ret.lower() != NO_IDENTIFICADO.lower():
-                await websocket.send_text(f"✅ Usuario identificado: {ret}")
-                break  # Salir si el usuario es identificado
+                fp_init()
 
-            await websocket.send_text("❌ No se detectó huella, intenta nuevamente...")
-            attempt += 1
+                # Esperar un mensaje del cliente
+                action = await websocket.receive_text()
 
-        if attempt > MAX_ATTEMPTS:
-            await websocket.send_text("🚫 Usuario no identificado tras múltiples intentos.")
+                try:
+                    action_data = json.loads(action)  # Suponemos que el cliente envía JSON
+                    command = action_data.get("action")
 
-    except WebSocketDisconnect:
-        print("🔌 Cliente desconectado del WebSocket")
-    finally:
-        # Asegúrate de cerrar la conexión aquí o manejar reconexiones desde el cliente.
-        await websocket.close()
+                    if command == "identify":
+                        await websocket.send_text(f"Intento {attempt} de {MAX_ATTEMPTS}...")
+                        ret = identify()  # Llamada sincrónica
+
+                        if ret.lower() != "no identificado":
+                            await websocket.send_text(json.dumps({"user": ret}))
+                            break  # Salir si el usuario es identificado
+
+                        await websocket.send_text("❌ No se detectó huella, intenta nuevamente...")
+                        attempt += 1
+
+                    elif command == "cancel_scan":
+                        await websocket.send_text("🛑 Proceso de escaneo cancelado.")
+                        break
+
+                    else:
+                        await websocket.send_text("❌ Comando no reconocido.")
+
+                except json.JSONDecodeError:
+                    await websocket.send_text("❌ Error en el formato del mensaje.")
+
+                fp_cleanup()
+
+            if attempt > MAX_ATTEMPTS:
+                fp_cleanup()
+                await websocket.send_text("🚫 Usuario no identificado tras múltiples intentos.")
+                raise Exception("Usuario no identificado")
+
+        except WebSocketDisconnect:
+            print("🔌 Cliente desconectado del WebSocket")
+            disconnected_event.set()  # Marcar que el cliente se desconectó
+            fp_cleanup()
+
+        finally:
+            fp_cleanup()
+            # Asegúrate de cerrar la conexión aquí o manejar reconexiones desde el cliente.
+            await websocket.close()

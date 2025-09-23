@@ -45,17 +45,17 @@ fp.fingerprint_identify.argtypes = []
 
 NO_IDENTIFICADO = "<NO IDENTIFICADO>"
 
+def fp_init():
+    return fp.fingerprint_init()
+
+def fp_cleanup():
+    return fp.fingerprint_cleanup()
 
 def identify() -> str:
-    fp.fingerprint_init();
-
-    c = fp.fingerprint_identify().decode()
-
-    fp.fingerprint_cleanup()
-    return c
+    return fp.fingerprint_identify().decode()
 
 if __name__ == '__main__':
     email = "ejemplo@usm.cl"
     # enroll(email, FpFinger.INDICE_DERECHO)
     # verify(email)
-    print(f"El usuario es {identify()}")
+    # print(f"El usuario es {identify()}")
